@@ -1,21 +1,111 @@
-MIT License
+livehistory.app — İstanbul, 1550
+Copyright © 2026 Prof. Dr. Hasan Hüseyin Güneş
+Bartın Üniversitesi, Tarih Bölümü
 
-Copyright (c) 2026 hasanhgunes-hue
+================================================================================
+LICENSE NOTICE / LİSANS BİLDİRİMİ
+================================================================================
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This work is licensed under the
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
+(CC BY-NC-SA 4.0).
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+Bu eser, Creative Commons Atıf-GayriTicari-AynıLisanslaPaylaş 4.0 Uluslararası
+Lisansı (CC BY-NC-SA 4.0) altında lisanslanmıştır.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+To view a copy of this license:
+Lisansın bir kopyasını görmek için:
+https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+================================================================================
+SUMMARY / ÖZET
+================================================================================
+
+YOU ARE FREE TO / SERBESTSİNİZ:
+
+  • Share — copy and redistribute the material in any medium or format
+    Paylaşmak — eseri her türlü ortamda kopyalamak ve yeniden dağıtmak
+
+  • Adapt — remix, transform, and build upon the material
+    Uyarlamak — eseri yeniden karıştırmak, dönüştürmek ve üzerine inşa etmek
+
+UNDER THE FOLLOWING TERMS / AŞAĞIDAKİ ŞARTLAR ALTINDA:
+
+  • Attribution (BY) — You must give appropriate credit, provide a link to
+    the license, and indicate if changes were made. You may do so in any
+    reasonable manner, but not in any way that suggests the licensor endorses
+    you or your use.
+
+    Atıf (BY) — Uygun referansı vermeniz, lisansa bağlantı sağlamanız ve
+    değişiklik yapılıp yapılmadığını belirtmeniz gerekir. Bunu makul bir
+    biçimde yapabilirsiniz, ancak lisans verenin sizi veya kullanımınızı
+    desteklediğini ima edecek şekilde olmamalıdır.
+
+  • NonCommercial (NC) — You may NOT use the material for commercial purposes.
+    Commercial use includes, but is not limited to: selling the software,
+    using it in paid services, monetizing through advertisements, integrating
+    into commercial educational platforms, or any use primarily intended for
+    commercial advantage or monetary compensation.
+
+    GayriTicari (NC) — Eseri TİCARİ amaçlarla kullanamazsınız. Ticari
+    kullanım, yazılımın satılması, ücretli hizmetlerde kullanılması,
+    reklamlar yoluyla gelir elde edilmesi, ticari eğitim platformlarına
+    entegre edilmesi veya öncelikle ticari avantaj ya da maddi karşılık
+    amacıyla yapılan herhangi bir kullanımı içerir, bunlarla sınırlı değildir.
+
+  • ShareAlike (SA) — If you remix, transform, or build upon the material,
+    you must distribute your contributions under the same license as the
+    original.
+
+    AynıLisanslaPaylaş (SA) — Eseri yeniden karıştırır, dönüştürür veya
+    üzerine inşa ederseniz, katkılarınızı orijinaliyle aynı lisans altında
+    dağıtmanız gerekir.
+
+  • No additional restrictions — You may not apply legal terms or
+    technological measures that legally restrict others from doing anything
+    the license permits.
+
+    Ek kısıtlamalar yok — Başkalarının lisansın izin verdiği şeyleri
+    yapmalarını yasal olarak kısıtlayan yasal koşullar veya teknolojik
+    önlemler uygulayamazsınız.
+
+================================================================================
+COMMERCIAL LICENSING / TİCARİ LİSANSLAMA
+================================================================================
+
+For commercial use, please contact the author for a separate commercial
+license agreement.
+
+Ticari kullanım için, ayrı bir ticari lisans anlaşması için lütfen yazarla
+iletişime geçin.
+
+Contact / İletişim:
+  Prof. Dr. Hasan Hüseyin Güneş
+  Bartın Üniversitesi, Tarih Bölümü
+  [E-posta adresinizi buraya ekleyebilirsiniz]
+
+================================================================================
+CITATION / ATIF
+================================================================================
+
+Güneş, H. H. (2026). livehistory.app — İstanbul 1550: Yapay Zekâ Destekli
+Yaşayan Tarih Simülasyonu / AI-Powered Living History Simulation.
+https://hasanhgunes-hue.github.io/livehistory-app/
+
+================================================================================
+DISCLAIMER / FERAGATNAME
+================================================================================
+
+THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE WORK OR THE USE OR OTHER DEALINGS IN THE WORK.
+
+ESER "OLDUĞU GİBİ" SAĞLANMAKTADIR. TİCARETE ELVERİŞLİLİK, BELİRLİ BİR AMACA
+UYGUNLUK VE İHLAL ETMEME GARANTİLERİ DAHİL ANCAK BUNLARLA SINIRLI OLMAMAK
+ÜZERE AÇIK VEYA ZIMNİ HİÇBİR GARANTİ VERİLMEMEKTEDİR. HİÇBİR DURUMDA YAZAR,
+ESERİN KULLANIMI VEYA ESERLE İLGİLİ DİĞER İŞLEMLER NEDENİYLE ORTAYA ÇIKAN
+HERHANGİ BİR TALEP, ZARAR VEYA BAŞKA HUKUKİ YÜKÜMLÜLÜKTEN SORUMLU
+TUTULAMAZ.
