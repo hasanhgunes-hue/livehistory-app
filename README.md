@@ -147,3 +147,6 @@ His research focuses on Ottoman *waqf* institutions, Ottoman Jerusalem, Palestin
 ### License
 
 MIT.
+© 2026 Prof. Dr. Hasan Hüseyin Güneş. Tüm hakları saklıdır.
+Bu proje CC BY-NC-SA 4.0 lisansı altında yayınlanmıştır.
+Ticari kullanım için yazardan yazılı izin gereklidir: [e-posta]
