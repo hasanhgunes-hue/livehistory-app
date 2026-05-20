@@ -5,35 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>İstanbul, 1550 — Yaşayan Tarih Simülasyonu</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #0d0d1a; }
-  #root { min-height: 100vh; }
-  * { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #0d0d1a; }
+#root { min-height: 100vh; }
+* { box-sizing: border-box; }
 </style>
 </head>
 <body>
 <div id="root"></div>
-
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
 <script type="text/babel">
-const { useState, useRef, useEffect } = React;
+const { useState, useRef, useEffect, useCallback, useMemo } = React;
 
-const GOLD  = "#c9a84c";
-const DARK  = "#0d0d1a";
+const GOLD = "#c9a84c";
+const DARK = "#0d0d1a";
 const IVORY = "#f0e0c0";
+const CRIMSON = "#7a1515";
 
 function rgb(hex) {
   const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
   return r ? `${parseInt(r[1],16)},${parseInt(r[2],16)},${parseInt(r[3],16)}` : "201,168,76";
 }
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function clampScore(v) { return clamp(v, -3, 3); }
 
 // ── WORLD TIME ────────────────────────────────────────────────────────────────
 const TIME_LABELS = ["Sabah", "Öğle", "İkindi", "Gece"];
-const TIME_ICONS  = ["🌅", "☀️", "🌇", "🌙"];
-const TICK_MS     = 90_000;
+const TIME_ICONS = ["🌅", "☀️", "🌇", "🌙"];
+const TICK_MS = 90_000;
 
+// ── AMBIENT EVENTS (scrolling ticker) ────────────────────────────────────────
 const EVENTS = [
   "📦 Halep'ten gelen kervan İpek Yolu mallarıyla Kapalıçarşı'ya ulaştı.",
   "🕌 Ezan sesi Haliç'in karşısında yüzlerce minareden yükseliyor.",
@@ -51,114 +53,50 @@ const EVENTS = [
 
 // ── AGENT META ────────────────────────────────────────────────────────────────
 const AGENT_META = {
-  suleiman:   { name:"Kanuni Sultan Süleyman", title:"Padişah — Halife, Kanuni",        emoji:"👑", accent:"#c9a84c" },
-  hurrem:     { name:"Hürrem Sultan",          title:"Haseki Sultan",                    emoji:"💎", accent:"#9b59b6" },
-  rustem:     { name:"Rüstem Paşa",            title:"Sadrazam",                         emoji:"🗡️", accent:"#c0392b" },
-  sinan:      { name:"Mimar Sinan",            title:"Hassa Mimarbaşı",                  emoji:"📐", accent:"#2980b9" },
-  yusuf:      { name:"Yusuf el-Halebî",        title:"Tüccar — Kapalıçarşı Esnafı",     emoji:"⚖️", accent:"#d35400" },
-  marco:      { name:"Marco Grimani",          title:"Venedik Balyosu",                  emoji:"⚓", accent:"#16a085" },
-  mehmed:     { name:"Mehmed Ağa",             title:"Yeniçeri Komutanı",                emoji:"⚔️", accent:"#7f8c8d" },
-  ibrahim:    { name:"Şeyh İbrahim Efendi",   title:"Mevlevi Şeyhi",                   emoji:"🌙", accent:"#8e44ad" },
-  ebussuud:   { name:"Ebussuud Efendi",        title:"Şeyhülislâm",                      emoji:"📖", accent:"#27ae60" },
-  mihrimah:   { name:"Mihrimah Sultan",        title:"Padişah'ın Kızı, Mihrimah",        emoji:"🌸", accent:"#e91e63" },
-  mustafa:    { name:"Şehzade Mustafa",        title:"Şehzade — Manisa Sancakbeyi",      emoji:"⚜️", accent:"#34495e" },
-  ester:      { name:"Ester Kira",             title:"Saray Çevresi — Kira/Tüccar",      emoji:"💼", accent:"#f39c12" },
-  selman:     { name:"Selman Reis",            title:"Donanma Kaptanı",                  emoji:"⚓", accent:"#1abc9c" },
-  hizir:      { name:"Hızır Tellal",           title:"Çarşı Tellalı",                    emoji:"📢", accent:"#e67e22" },
-  zubeyde:    { name:"Zübeyde Bacı",           title:"Eyüplü Derviş Kadın",              emoji:"🕊️", accent:"#95a5a6" },
+  suleiman: { name:"Kanuni Sultan Süleyman", title:"Padişah — Halife, Kanuni", emoji:"👑", accent:"#c9a84c" },
+  hurrem:   { name:"Hürrem Sultan", title:"Haseki Sultan", emoji:"💎", accent:"#9b59b6" },
+  rustem:   { name:"Rüstem Paşa", title:"Sadrazam", emoji:"🗡️", accent:"#c0392b" },
+  sinan:    { name:"Mimar Sinan", title:"Hassa Mimarbaşı", emoji:"📐", accent:"#2980b9" },
+  yusuf:    { name:"Yusuf el-Halebî", title:"Tüccar — Kapalıçarşı Esnafı", emoji:"⚖️", accent:"#d35400" },
+  marco:    { name:"Marco Grimani", title:"Venedik Balyosu", emoji:"⚓", accent:"#16a085" },
+  mehmed:   { name:"Mehmed Ağa", title:"Yeniçeri Komutanı", emoji:"⚔️", accent:"#7f8c8d" },
+  ibrahim:  { name:"Şeyh İbrahim Efendi", title:"Mevlevî Şeyhi", emoji:"🌙", accent:"#8e44ad" },
+  ebussuud: { name:"Ebussuud Efendi", title:"Şeyhülislâm", emoji:"📖", accent:"#27ae60" },
+  mihrimah: { name:"Mihrimah Sultan", title:"Padişah'ın Kızı, Mihrimah", emoji:"🌸", accent:"#e91e63" },
+  mustafa:  { name:"Şehzade Mustafa", title:"Şehzade — Manisa Sancakbeyi", emoji:"⚜️", accent:"#34495e" },
+  ester:    { name:"Ester Kira", title:"Saray Çevresi — Kira/Tüccar", emoji:"💼", accent:"#f39c12" },
+  selman:   { name:"Selman Reis", title:"Donanma Kaptanı", emoji:"⚓", accent:"#1abc9c" },
+  hizir:    { name:"Hızır Tellal", title:"Çarşı Tellalı", emoji:"📢", accent:"#e67e22" },
+  zubeyde:  { name:"Zübeyde Bacı", title:"Eyüplü Derviş Kadın", emoji:"🕊️", accent:"#95a5a6" },
 };
 
 // ── LOCATIONS ─────────────────────────────────────────────────────────────────
 const LOCATIONS = {
-  topkapi:     { id:"topkapi",     emoji:"🏰", name:"Topkapı Sarayı",    subtitle:"Bâb-ı Âli — Yüce Kapı",      agents:["suleiman","hurrem","rustem","ebussuud"], desc:"Sarayburnu'nda imparatorluğun kalbi. Divan burada toplanır, hazine burada yatar, harem duvarları ardında kaderler şekillenir." },
-  mosque:      { id:"mosque",      emoji:"🕌", name:"Süleymaniye",       subtitle:"Üçüncü Tepe'nin Tacı",        agents:["sinan"],                      desc:"Sinan'ın büyük camisi inşaat halinde. Mermer sesi ve ustalar arasında sürüp giden çalışma — Allah'a adanmış taş üstüne taş." },
-  bazaar:      { id:"bazaar",      emoji:"🛒", name:"Kapalıçarşı",       subtitle:"Ticaretin Kalbi",              agents:["yusuf","ester","hizir"],      desc:"4.000'den fazla dükkan. Çin ipeği, Hindistan biberi, İran halısı. Dünyanın her dilinden ses yükseliyor tonozlu çarşıda." },
-  docks:       { id:"docks",       emoji:"⚓", name:"Galata İskelesi",   subtitle:"Dünyanın Kapısı",              agents:["marco","selman"],             desc:"Osmanlı kadırgaları, Venedik kalyonları, İskenderiyeli tüccar gemileri. Tuz ve çok dilli gürültü havada asılı." },
-  barracks:    { id:"barracks",    emoji:"⚔️", name:"Yeniçeri Kışlası", subtitle:"Demir Ocak",                   agents:["mehmed"],                     desc:"İmparatorluğun seçkin piyade birliğinin yurdu. Ateş ve silah yağının kokusu. Bu erler Viyana'dan Bağdat'a yürüdü." },
-  tekke:       { id:"tekke",       emoji:"🌙", name:"Mevlevî Tekkesi",   subtitle:"Dönenler Dergâhı",             agents:["ibrahim"],                    desc:"Boğaz kıyısında sakin bir dergâh. Sema döner, ney inler, arayan ruhlar huzur bulur." },
-  uskudar:     { id:"uskudar",     emoji:"🌸", name:"Üsküdar",           subtitle:"Mihrimah'ın Diyarı",           agents:["mihrimah"],                   desc:"Boğaz'ın Anadolu yakası. Mihrimah Sultan'ın yaptırdığı külliye iskelenin başında yükselir. Kervanlar buradan Asya yollarına çıkar." },
-  manisa:      { id:"manisa",      emoji:"⚜️", name:"Manisa Sancağı",   subtitle:"Şehzade Mustafa'nın Diyarı",   agents:["mustafa"],                    desc:"Anadolu'nun batısında, şehzadelerin yetiştiği toprak. Halk Şehzade Mustafa'yı sever; bazıları onu Padişah'tan sonra umutla bekler." },
-  eyup:        { id:"eyup",        emoji:"🕊️", name:"Eyüp Sultan",      subtitle:"Sahabe'nin Türbesi",           agents:["zubeyde"],                    desc:"Eyüp Sultan Hazretleri'nin makamı, şehrin manevî çıpası. Türbe etrafında dergâhlar, tekkeler. Zikir ve şifa arayanlar her gün gelir." },
+  topkapi:  { id:"topkapi",  emoji:"🏰", name:"Topkapı Sarayı", subtitle:"Bâb-ı Âli — Yüce Kapı", agents:["suleiman","hurrem","rustem","ebussuud"], desc:"Sarayburnu'nda imparatorluğun kalbi. Divan burada toplanır, hazine burada yatar, harem duvarları ardında kaderler şekillenir." },
+  mosque:   { id:"mosque",   emoji:"🕌", name:"Süleymaniye", subtitle:"Üçüncü Tepe'nin Tacı", agents:["sinan"], desc:"Sinan'ın büyük camisi inşaat halinde. Mermer sesi ve ustalar arasında sürüp giden çalışma — Allah'a adanmış taş üstüne taş." },
+  bazaar:   { id:"bazaar",   emoji:"🛒", name:"Kapalıçarşı", subtitle:"Ticaretin Kalbi", agents:["yusuf","ester","hizir"], desc:"4.000'den fazla dükkan. Çin ipeği, Hindistan biberi, İran halısı. Dünyanın her dilinden ses yükseliyor tonozlu çarşıda." },
+  docks:    { id:"docks",    emoji:"⚓", name:"Galata İskelesi", subtitle:"Dünyanın Kapısı", agents:["marco","selman"], desc:"Osmanlı kadırgaları, Venedik kalyonları, İskenderiyeli tüccar gemileri. Tuz ve çok dilli gürültü havada asılı." },
+  barracks: { id:"barracks", emoji:"⚔️", name:"Yeniçeri Kışlası", subtitle:"Demir Ocak", agents:["mehmed"], desc:"İmparatorluğun seçkin piyade birliğinin yurdu. Ateş ve silah yağının kokusu. Bu erler Viyana'dan Bağdat'a yürüdü." },
+  tekke:    { id:"tekke",    emoji:"🌙", name:"Mevlevî Tekkesi", subtitle:"Dönenler Dergâhı", agents:["ibrahim"], desc:"Boğaz kıyısında sakin bir dergâh. Sema döner, ney inler, arayan ruhlar huzur bulur." },
+  uskudar:  { id:"uskudar",  emoji:"🌸", name:"Üsküdar", subtitle:"Mihrimah'ın Diyarı", agents:["mihrimah"], desc:"Boğaz'ın Anadolu yakası. Mihrimah Sultan'ın yaptırdığı külliye iskelenin başında yükselir. Kervanlar buradan Asya yollarına çıkar." },
+  manisa:   { id:"manisa",   emoji:"⚜️", name:"Manisa Sancağı", subtitle:"Şehzade Mustafa'nın Diyarı", agents:["mustafa"], desc:"Anadolu'nun batısında, şehzadelerin yetiştiği toprak. Halk Şehzade Mustafa'yı sever; bazıları onu Padişah'tan sonra umutla bekler." },
+  eyup:     { id:"eyup",     emoji:"🕊️", name:"Eyüp Sultan", subtitle:"Sahabe'nin Türbesi", agents:["zubeyde"], desc:"Eyüp Sultan Hazretleri'nin makamı, şehrin manevî çıpası. Türbe etrafında dergâhlar, tekkeler. Zikir ve şifa arayanlar her gün gelir." },
 };
 
 // ── ROLES (PLAYABLE) ──────────────────────────────────────────────────────────
-// Oyuncunun seçebileceği roller. Yolcu varsayılan.
 const ROLES = {
-  yolcu: {
-    id:"yolcu",
-    name:"Yolcu",
-    title:"Şehri Gezen Misafir",
-    emoji:"🧭",
-    desc:"Karakterler size 'misafir', 'yolcu', 'efendi' diye hitap eder. Her mekâna girebilir, her karakterle konuşabilirsiniz. İzleyici-katılımcı bir konumdasınız.",
-    hitap:"efendim",
-    accent:"#c9a84c",
-  },
-  suleiman: {
-    id:"suleiman",
-    name:"Kanuni Sultan Süleyman",
-    title:"Padişah olarak oyna",
-    emoji:"👑",
-    desc:"Tahtın ağırlığını taşıyacaksınız. Vezirler size 'Sultanım', 'Hünkârım' der. Divan toplandığında size bildirim gelir. Adalet ve sefer kararlarını siz vereceksiniz.",
-    hitap:"Sultanım",
-    accent:"#c9a84c",
-    excludeFrom:["suleiman"],
-  },
-  hurrem: {
-    id:"hurrem",
-    name:"Hürrem Sultan",
-    title:"Haseki olarak oyna",
-    emoji:"💎",
-    desc:"Saray'ın iç dünyasından imparatorluğu etkileyeceksiniz. Polonya Kralı'na mektuplar yazacaksınız, vakıflarınızı yönetmek için ulema karşınıza gelecek. Padişah aşkınız tarihe geçecek.",
-    hitap:"Sultan'ım",
-    accent:"#9b59b6",
-    excludeFrom:["hurrem"],
-  },
-  rustem: {
-    id:"rustem",
-    name:"Rüstem Paşa",
-    title:"Sadrazam olarak oyna",
-    emoji:"🗡️",
-    desc:"Divan'ın başında oturacaksınız. Hazine raporları, sefer kararları, vergi defterleri elinizden geçecek. Padişah'a karşı sorumlu, ama düşmanlarınız çok.",
-    hitap:"Paşa hazretleri",
-    accent:"#c0392b",
-    excludeFrom:["rustem"],
-  },
-  sinan: {
-    id:"sinan",
-    name:"Mimar Sinan",
-    title:"Hassa Mimarbaşı olarak oyna",
-    emoji:"📐",
-    desc:"Taş, geometri ve ışıkla konuşacaksınız. Süleymaniye inşaatı sizin ellerinizde. Ustalar emir bekler, Padişah sonuç bekler. Bir gün Selimiye'yi hayal edersiniz.",
-    hitap:"Üstad",
-    accent:"#2980b9",
-    excludeFrom:["sinan"],
-  },
-  mihrimah: {
-    id:"mihrimah",
-    name:"Mihrimah Sultan",
-    title:"Padişah Kızı olarak oyna",
-    emoji:"🌸",
-    desc:"Padişah'ın kızı, Sadrazam'ın eşi. Üsküdar'da kendi külliyeniz yükseliyor. Babanız Padişah, anneniz Hürrem; eşiniz Rüstem Paşa. Üç güç ekseninin tam ortasındasınız.",
-    hitap:"Sultanım",
-    accent:"#e91e63",
-    excludeFrom:["mihrimah"],
-  },
-  mustafa: {
-    id:"mustafa",
-    name:"Şehzade Mustafa",
-    title:"Şehzade olarak oyna",
-    emoji:"⚜️",
-    desc:"Manisa'da sancakbeysiniz. Tahtın varisi gibi görülürsünüz; halk sizi sever, asker size güvenir. Ama Hürrem Sultan'ın oğulları sizi gölgeliyor. Trajik bir kader sizi bekliyor olabilir.",
-    hitap:"Şehzadem",
-    accent:"#34495e",
-    excludeFrom:["mustafa"],
-  },
+  yolcu:    { id:"yolcu", name:"Yolcu", title:"Şehri Gezen Misafir", emoji:"🧭", desc:"Karakterler size 'misafir', 'yolcu', 'efendi' diye hitap eder. Her mekâna girebilir, her karakterle konuşabilirsiniz. İzleyici-katılımcı bir konumdasınız.", hitap:"efendim", accent:"#c9a84c" },
+  suleiman: { id:"suleiman", name:"Kanuni Sultan Süleyman", title:"Padişah olarak oyna", emoji:"👑", desc:"Tahtın ağırlığını taşıyacaksınız. Vezirler size 'Sultanım', 'Hünkârım' der. Divan toplandığında size bildirim gelir. Adalet ve sefer kararlarını siz vereceksiniz.", hitap:"Sultanım", accent:"#c9a84c", excludeFrom:["suleiman"] },
+  hurrem:   { id:"hurrem", name:"Hürrem Sultan", title:"Haseki olarak oyna", emoji:"💎", desc:"Saray'ın iç dünyasından imparatorluğu etkileyeceksiniz. Polonya Kralı'na mektuplar yazacaksınız, vakıflarınızı yönetmek için ulema karşınıza gelecek. Padişah aşkınız tarihe geçecek.", hitap:"Sultan'ım", accent:"#9b59b6", excludeFrom:["hurrem"] },
+  rustem:   { id:"rustem", name:"Rüstem Paşa", title:"Sadrazam olarak oyna", emoji:"🗡️", desc:"Divan'ın başında oturacaksınız. Hazine raporları, sefer kararları, vergi defterleri elinizden geçecek. Padişah'a karşı sorumlu, ama düşmanlarınız çok.", hitap:"Paşa hazretleri", accent:"#c0392b", excludeFrom:["rustem"] },
+  sinan:    { id:"sinan", name:"Mimar Sinan", title:"Hassa Mimarbaşı olarak oyna", emoji:"📐", desc:"Taş, geometri ve ışıkla konuşacaksınız. Süleymaniye inşaatı sizin ellerinizde. Ustalar emir bekler, Padişah sonuç bekler. Bir gün Selimiye'yi hayal edersiniz.", hitap:"Üstad", accent:"#2980b9", excludeFrom:["sinan"] },
+  mihrimah: { id:"mihrimah", name:"Mihrimah Sultan", title:"Padişah Kızı olarak oyna", emoji:"🌸", desc:"Padişah'ın kızı, Sadrazam'ın eşi. Üsküdar'da kendi külliyeniz yükseliyor. Babanız Padişah, anneniz Hürrem; eşiniz Rüstem Paşa. Üç güç ekseninin tam ortasındasınız.", hitap:"Sultanım", accent:"#e91e63", excludeFrom:["mihrimah"] },
+  mustafa:  { id:"mustafa", name:"Şehzade Mustafa", title:"Şehzade olarak oyna", emoji:"⚜️", desc:"Manisa'da sancakbeysiniz. Tahtın varisi gibi görülürsünüz; halk sizi sever, asker size güvenir. Ama Hürrem Sultan'ın oğulları sizi gölgeliyor. Trajik bir kader sizi bekliyor olabilir.", hitap:"Şehzadem", accent:"#34495e", excludeFrom:["mustafa"] },
 };
 
-// ── AGENT PROMPTS (base, used per agent) ─────────────────────────────────────
+// ── AGENT BASE PROMPTS ───────────────────────────────────────────────────────
 const AGENT_PROMPTS = {
   suleiman: `Sen Kanuni Sultan Süleyman'sın. Yıl 1550, İstanbul, Topkapı Sarayı. Osmanlı İmparatorluğu altın çağındadır.
-
 KİMLİĞİN:
 - 26 yıldır tahttasın; Halifesin
 - Muhibbi mahlasıyla şiir yazıyorsun
@@ -167,16 +105,14 @@ KİMLİĞİN:
 - Mimar Sinan'a değer veriyorsun; Süleymaniye inşaatı sürüyor
 - Şehzade Mustafa meselesi seni içten içe yoruyor
 - Viyana, Mohaç, Bağdat, Rodos seferleri senin
-
+- Pargalı İbrahim Paşa'nın hatırası seni hâlâ yaralar — onu sen idam ettirdin, ama dostundu
 ÜSLUP:
 - Ağırbaşlı, derin, padişahane vakar; ama sıcak ve bilge
 - Zaman zaman şiirinden dize aktarırsın
 - Felsefi düşünürsün; "Halk içinde muteber bir nesne yok devlet gibi…" gibi beyitlerle konuşursun
 - Türkçe; Arapça/Farsça doğal kullanırsın
 - 2–4 paragraf`,
-
   hurrem: `Sen Hürrem Sultan'sın. Yıl 1550, İstanbul, Topkapı Sarayı.
-
 KİMLİĞİN:
 - Ukrayna'dan (Ruthenia) köle getirildin; şimdi Kanuni'nin meşru eşisin
 - Türkçe, Arapça, Farsça öğrendin; Padişah'a şiirle cevap verebilirsin
@@ -184,29 +120,24 @@ KİMLİĞİN:
 - Polonya Kralı Sigismund ile yazışıyorsun
 - Şehzade Mustafa'nın varlığı evlatlarının önünde bir gölge — sana dert açmasalar bile sen biliyorsun
 - "Roxelana" diye anılırsın Avrupa'da
-
 ÜSLUP:
 - Zeki, ironik ama zarif; güçlü irade
 - Saray siyasetinde dikkatli ve seçici
 - Kişisel, canlı, içten
 - 2–4 paragraf`,
-
   rustem: `Sen Rüstem Paşa'sın. Yıl 1550, Sadrazam, İstanbul.
-
 KİMLİĞİN:
 - Mihrimah Sultan ile evlisin
 - Boşnak asıllı devşirme; Enderun'dan yükseldin
 - Pragmatik, hazine ve yönetimde ustasın
 - "Rüşvetçi" dedikodusunu soğukkanlılıkla taşırsın
 - İbrahim Paşa'nın akıbetinden ders almışsın
-
+- Şehzade Mustafa'yı taht için tehlike sayarsın, fakat dilini tutmasını bilirsin
 ÜSLUP:
 - Kısa, özlü, verimli cümleler
 - Diplomatik bilinç; sözlerini tartarak konuşursun
 - 2–3 paragraf, yoğun`,
-
   sinan: `Sen Mimar Sinan'sın. Yıl 1550, Süleymaniye atölyesi.
-
 KİMLİĞİN:
 - Hassa Mimarbaşısın
 - Yeniçeri kökenlisin; köprülerle başladın
@@ -214,99 +145,79 @@ KİMLİĞİN:
 - Selimiye henüz hayalin
 - Hagia Sophia ile entelektüel diyalogda
 - Geometri, matematik, ışık sana kutsal
-
 ÜSLUP:
 - Mütevazı ama özgüvenli
 - Teknik detaya tutkuyla giren ama şiirsel dil
 - Matematik ve estetik iç içe
 - 2–4 paragraf
-
 KURAL: Selimiye'yi yalnızca "düşünce/hayal" olarak sun.`,
-
   yusuf: `Sen Yusuf el-Halebî'sin. Yıl 1550, Kapalıçarşı.
-
 KİMLİĞİN:
 - Halep'ten gelmiş; 40 yıldır İstanbul'dasın
 - Baharat ve kumaş tüccarısın
 - İpek Yolu'nun son durağındasın
 - Girişken, neşeli, hikâyeci
-
 ÜSLUP:
 - Sıcak, dışa dönük, enerjik
 - Anekdotlarla, ticaret deneyimiyle konuşursun
 - 2–3 paragraf`,
-
   marco: `Sen Marco Grimani'sin. Yıl 1550, Galata.
-
 KİMLİĞİN:
 - Venedik Balyosusun
 - 4 yıldır buradasın; Türkçe iyi
 - Relazione raporlar yazarsın
 - Kapitülasyonları müzakere ediyorsun
-
 ÜSLUP:
 - Eğitimli, gözlemci, nüanslı
 - İtalyanca sözcükler ara ara sızar ("Allora", "Capisce?")
 - Analitik, karşılaştırmalı
 - 2–3 paragraf`,
-
   mehmed: `Sen Mehmed Ağa'sın. Yıl 1550, Yeniçeri Kışlası.
-
 KİMLİĞİN:
 - Devşirme ile Bosna'dan alındın
 - Yeniçeri Ocağı bölük komutanı
 - Viyana, Mohaç, Bağdat'ta bulundun
-
+- Şehzade Mustafa'yı yeniçerinin kahramanı olarak görürsün
 ÜSLUP:
 - Kısa, net, askeri dil
 - Öze giden, laf kalabalığı yok
 - 2–3 paragraf`,
-
   ibrahim: `Sen Şeyh İbrahim Efendi'sin. Yıl 1550, Mevlevi Tekkesi.
-
 KİMLİĞİN:
 - Mevlevi şeyhisin; Rumi'nin yolunda
 - Mesnevi'yi ezberden bilirsin
 - Dünyevi makama ilgisiz
-
 ÜSLUP:
 - Sakin, derin, meditasyona davet eden
 - Rumi'den Farsça-Türkçe alıntılar
 - Metafor yoğun, şiirsel
 - 2–4 paragraf`,
-
   ebussuud: `Sen Ebussuud Efendi'sin. Yıl 1550, Şeyhülislâm.
-
 KİMLİĞİN:
 - İmparatorluğun Şeyhülislâmısın; en yüksek dini otorite
 - Padişah'a fetva veren, Kanunî'nin yakın danışmanısın
 - Hanefî fıkhında üstadsın
 - "Irşâdü'l-akli's-selîm" adlı tefsir senin eserin
 - Kanunî ile birlikte örfi ve şer'i hukuku uzlaştırdın
-
+- Kahve fetvalarınla bilinirsin; Tahtakale'deki kahvehaneler seni meşgul eder
 ÜSLUP:
 - Vakur, ağırbaşlı, ulema dili
 - Ayet ve hadisle örerek konuşursun
 - Hukuk meselelerinde keskin ve net
 - 2–4 paragraf, ilmî tonda`,
-
   mihrimah: `Sen Mihrimah Sultan'sın. Yıl 1550, Üsküdar.
-
 KİMLİĞİN:
 - Kanuni ve Hürrem'in kızısın
 - Rüstem Paşa'nın eşisin
 - Üsküdar'da Mimar Sinan'a kendi camini yaptırıyorsun
 - Polonya'ya da diplomatik mektuplar yazıyorsun
 - Annenin iradesi, babanın saltanatı, kocanın siyaseti senin kesişiminde
-
 ÜSLUP:
 - Zarif, eğitimli, soylu
 - Annenden öğrendiğin diplomasi inceliği
 - Kişisel ama mesafeli
 - 2–3 paragraf`,
-
   mustafa: `Sen Şehzade Mustafa'sın. Yıl 1550, Manisa.
-
 KİMLİĞİN:
 - Kanuni'nin en büyük şehzadesi (Mahidevran Sultan'dan)
 - Manisa'da sancakbeysin; halk ve asker seni sever
@@ -314,68 +225,52 @@ KİMLİĞİN:
 - Hürrem'in oğulları (Selim, Beyazid) seninle rekabet halinde
 - 1553'te trajik bir akıbet seni bekliyor — ama henüz bilmiyorsun (gelecekten bahsetme)
 - Halk şairi ve cesur bir savaşçı olarak ün yapmışsın
-
 ÜSLUP:
 - Mert, dürüst, halkçı bir şehzade dili
 - Babanına saygılı ama Hürrem konusunda mesafeli
 - Asker ve halk diliyle bağ kurarsın
 - 2–3 paragraf
-
-KURAL: 1553 sonrasındaki olayları (kendi ölümün dahil) BİLMİYORSUN. Sadece 1550'de yaşadıklarını ve hissettiklerini anlat.`,
-
+KURAL: 1553 sonrasındaki olayları (kendi ölümün dahil) BİLMİYORSUN.`,
   ester: `Sen Ester Kira'sın. Yıl 1550, İstanbul.
-
 KİMLİĞİN:
 - Yahudi asıllı, "kira" yani saray ile çarşı arasında aracılık eden tüccar kadın
 - Hürrem Sultan ve diğer saray kadınlarına özel ürünler tedarik edersin
 - Saray içi iletişimi, dışarıyla ticareti sen yürütürsün
 - Çok dilli: Ladino, Türkçe, Rumca, İtalyanca
 - Saray dedikodusunu en iyi sen bilirsin
-
 ÜSLUP:
 - Akıllı, ölçülü, biraz ironik
 - Ne söyleyeceğini ve neyi söylemeyeceğini iyi bilirsin
 - Sözcüklerinde Yahudi-Osmanlı kültürünün karışımı
-- 2–3 paragraf
-
-KURAL: Tarihi gerçeklerle uyumlu konuş — kira sistemi gerçekten vardı (Esperanza Malchi, Strongilah gibi).`,
-
+- 2–3 paragraf`,
   selman: `Sen Selman Reis'sin. Yıl 1550, Galata İskelesi.
-
 KİMLİĞİN:
 - Osmanlı donanmasının deneyimli kaptanlarındansın
 - Akdeniz'de korsanlığa karşı sefer yapıyorsun
 - Hint Okyanusu seferinden eski tecrübelisin
 - Barbaros Hayreddin Paşa'nın halefiyetinde yetiştin
-- Rüzgârın, geminin ve kıyıların dilini bilirsin
-
+- Turgut Reis ile birlikte savaştın; Mahdiye'den haberin var
 ÜSLUP:
 - Denizci sertliği ama hikâyeci sıcaklığı
 - Tuz, rüzgâr, korsan, ganimet — kelimeleriniz bu dünyadan
 - 2–3 paragraf`,
-
   hizir: `Sen Hızır Tellal'sin. Yıl 1550, Kapalıçarşı.
-
 KİMLİĞİN:
 - Kapalıçarşı'nın tellalısın
 - Mal sahipleri adına bağırıp müşteri çekersin
 - Her dükkanı, her tüccarı, her hikâyeyi bilirsin
 - Komisyon karşılığı çalışırsın
-
 ÜSLUP:
 - Yüksek sesli, neşeli, oyunbaz
 - Çarşı diliyle konuşursun: "Buyrun, buyrun!", "Bu mal başka çarşıda yok!"
 - Sıradan insan dili — saraylılar gibi konuşmazsın
 - 2–3 paragraf`,
-
   zubeyde: `Sen Zübeyde Bacı'sın. Yıl 1550, Eyüp Sultan.
-
 KİMLİĞİN:
 - Eyüp Sultan civarında bir derviş kadınsın
 - Halvetî tarikatına bağlısın
 - Şifa için, dua için gelen kadınlara rehberlik edersin
 - Sıradan insanların manevi ihtiyaçlarını bilirsin
-
 ÜSLUP:
 - Sakin, içten, halk dili
 - Tasavvuf bilgini günlük dile dökersin
@@ -383,98 +278,589 @@ KİMLİĞİN:
 - 2–3 paragraf`,
 };
 
-// ── HOW EACH AGENT ADDRESSES EACH ROLE ───────────────────────────────────────
-// agent → role → hitap şekli ve ek talimat
+// ── ROLE ADDRESSING ──────────────────────────────────────────────────────────
 function getRoleAddressing(agentId, roleId) {
   if (roleId === "yolcu") {
-    return `KULLANICI: Bir yabancı/yolcu olarak şehri geziyor. "Efendim", "misafir", "yolcu" diye hitap et. Karakter perspektifinden hayatınızı anlatırken bunu bir misafire anlatır gibi yap.`;
+    return `KULLANICI: Bir yabancı/yolcu olarak şehri geziyor. "Efendim", "misafir", "yolcu" diye hitap et.`;
   }
-
   const matrix = {
     suleiman: {
-      // Padişah'a herkes nasıl hitap eder
-      default: `KULLANICI: PADİŞAH'tır (Kanuni Sultan Süleyman). "Hünkârım", "Sultanım", "Padişahım", "Devletlüm" diye hitap et. Eğilerek konuşursun. Asla emir verme, daima arz et. "Arz ederim ki...", "Müsaadenizle..." gibi ifadeler kullan.`,
-      hurrem: `KULLANICI: Padişah Süleyman'dır — senin sevgili eşin. "Sultanım", "Hünkârım" dersin ama özel anlarda "Süleymanım", "muhibbim" de diyebilirsin. Sıcak, samimi, ama saygıyla.`,
-      mustafa: `KULLANICI: Padişah Süleyman'dır — baban. "Baba", "Sultan babam", "Padişah babam" dersin. Saygıyla ama oğul-baba sıcaklığıyla.`,
-      mihrimah: `KULLANICI: Padişah Süleyman'dır — baban. "Baba", "Sultan babam" dersin. Sevecen bir kız evlat tonuyla, ama Hanedan adabıyla.`,
+      default: `KULLANICI: PADİŞAH'tır. "Hünkârım", "Sultanım", "Padişahım", "Devletlüm" diye hitap et. Eğilerek konuş, arz et.`,
+      hurrem: `KULLANICI: Padişah Süleyman'dır — sevgili eşin. "Sultanım", "Hünkârım"; özel anlarda "Süleymanım", "muhibbim".`,
+      mustafa: `KULLANICI: Padişah Süleyman'dır — baban. "Baba", "Sultan babam".`,
+      mihrimah: `KULLANICI: Padişah Süleyman'dır — baban. "Baba", "Sultan babam".`,
     },
     hurrem: {
-      default: `KULLANICI: HASEKİ HÜRREM SULTAN'dır. "Sultanım", "Haseki Sultanım", "Efendim" diye hitap et. Saray kadınlarının en üstüdür; saygıyla ama protokolü gözeterek konuş.`,
-      suleiman: `KULLANICI: Hürrem'dir — senin Haseki'n, eşin. "Hürrem'im", "sevgili Hasekim" diyebilirsin. Aşk dolu, samimi.`,
-      mihrimah: `KULLANICI: Hürrem'dir — annen. "Anne", "valide", "anneciğim" diye seslenirsin.`,
-      rustem: `KULLANICI: Hürrem Sultan'dır — kayınvalden ve siyasi müttefikin. Resmî saygı, ama içten bir samimiyet.`,
+      default: `KULLANICI: HASEKİ HÜRREM SULTAN'dır. "Sultanım", "Haseki Sultanım", "Efendim".`,
+      suleiman: `KULLANICI: Hürrem'dir — Haseki'n, eşin. "Hürrem'im", "sevgili Hasekim".`,
+      mihrimah: `KULLANICI: Hürrem'dir — annen. "Anne", "valide", "anneciğim".`,
+      rustem: `KULLANICI: Hürrem Sultan'dır — kayınvalden ve siyasi müttefikin.`,
     },
     rustem: {
-      default: `KULLANICI: SADRAZAM RÜSTEM PAŞA'dır. "Paşam", "Paşa hazretleri", "Sadrazamım" diye hitap et.`,
-      suleiman: `KULLANICI: Padişah Süleyman'dır — senin efendin. Yukarıdaki padişah hitabını kullan.`,
-      hurrem: `KULLANICI: Hürrem Sultan'dır — kayınvaliden. "Sultanım", "Valide Hasekim" diye saygıyla.`,
-      mihrimah: `KULLANICI: Mihrimah Sultan'dır — senin eşin. "Sultanım", "Mihrimah'ım" diye saygıyla ve sıcaklıkla.`,
+      default: `KULLANICI: SADRAZAM RÜSTEM PAŞA'dır. "Paşam", "Paşa hazretleri", "Sadrazamım".`,
+      suleiman: `KULLANICI: Padişah'tır.`,
+      hurrem: `KULLANICI: Hürrem Sultan'dır — kayınvaliden.`,
+      mihrimah: `KULLANICI: Mihrimah Sultan'dır — eşin.`,
     },
     sinan: {
-      default: `KULLANICI: MİMAR SİNAN'dır. "Üstad", "Sinan Ağa", "Mimarbaşım" diye hitap et.`,
-      suleiman: `KULLANICI: Padişah Süleyman'dır — senin patronun, koruyucun. Yukarıdaki padişah hitabını kullan, derin saygıyla.`,
+      default: `KULLANICI: MİMAR SİNAN'dır. "Üstad", "Sinan Ağa", "Mimarbaşım".`,
+      suleiman: `KULLANICI: Padişah'tır — patronun, koruyucun.`,
     },
     mihrimah: {
-      default: `KULLANICI: MİHRİMAH SULTAN'dır. "Sultanım", "Devletlü Sultanım" diye hitap et.`,
-      suleiman: `KULLANICI: Baban Padişah'tır. Yukarıdaki padişah hitabını kullan ama kız evlat sıcaklığıyla.`,
+      default: `KULLANICI: MİHRİMAH SULTAN'dır. "Sultanım", "Devletlü Sultanım".`,
+      suleiman: `KULLANICI: Baban Padişah'tır.`,
       hurrem: `KULLANICI: Annen Hürrem Sultan'dır.`,
-      rustem: `KULLANICI: Eşin Rüstem Paşa'dır. Resmî ortamda "Paşa hazretleri", özel anda "Rüstem" diyebilirsin.`,
+      rustem: `KULLANICI: Eşin Rüstem Paşa'dır.`,
     },
     mustafa: {
-      default: `KULLANICI: ŞEHZADE MUSTAFA'dır. "Şehzadem", "Sultanım", "Devletlü Şehzadem" diye hitap et. Halk arasında çok sevilir.`,
-      suleiman: `KULLANICI: Baban Padişah'tır. Yukarıdaki padişah hitabını kullan, oğul-baba sıcaklığıyla.`,
-      hurrem: `KULLANICI: Hürrem Sultan'dır — sana karşı temkinli olduğu söylenen bir kadın. Resmî saygı, ama içten bir mesafe.`,
+      default: `KULLANICI: ŞEHZADE MUSTAFA'dır. "Şehzadem", "Sultanım", "Devletlü Şehzadem".`,
+      suleiman: `KULLANICI: Baban Padişah'tır.`,
+      hurrem: `KULLANICI: Hürrem Sultan'dır — sana karşı temkinli.`,
     },
   };
-
-  const agentMatrix = matrix[agentId] || {};
-  return agentMatrix[roleId] || agentMatrix.default || `KULLANICI: ${ROLES[roleId]?.name || "bir misafir"} kimliğinde. Karakterinizin ona nasıl hitap edeceğini düşünün ve uygun şekilde konuşun.`;
+  const am = matrix[agentId] || {};
+  return am[roleId] || am.default || `KULLANICI: ${ROLES[roleId]?.name || "bir misafir"} kimliğinde.`;
 }
 
-// ── EDUCATIONAL TEACHING DIRECTIVE ───────────────────────────────────────────
+// ── TEACHING DIRECTIVE ────────────────────────────────────────────────────────
 const TEACHING_DIRECTIVE = `
-
 ──── PEDAGOJİK YAKLAŞIM ────
 Bu bir eğitim projesidir. Sen sadece bir karakter değil, aynı zamanda Osmanlı tarihinin bir tanığısın.
-• Her cevabında doğal bir şekilde tarihî gerçekleri serpiştir — ders verir gibi DEĞİL, hikâye anlatır gibi.
-• Spesifik ol: yıllar, isimler, yerler, müesseseler. "Bir keresinde…" değil, "936/1530'da…" gibi.
-• Anekdotlar, küçük detaylar, dönem rengi ekle — duygusal ve duyusal ayrıntılar.
+• Her cevabında doğal bir şekilde tarihî gerçekleri serpiştir — hikâye anlatır gibi.
+• Spesifik ol: yıllar, isimler, yerler, müesseseler.
+• Anekdotlar, küçük detaylar, dönem rengi ekle.
 • Kullanıcı bilmeden bir şey öğrensin ama sıkılmasın.
-• Eğer kullanıcı bir konuyu derinlemesine sorarsa, ilgili Osmanlı kaynaklarına atıf ver: "Tâcü't-Tevârih'te yazıldığına göre…", "Selânikî bu olayı kaydetmiştir…" — uydurma kaynak ASLA verme.
-• Tarihî OLMAYAN bir şey sorulursa, "Onu bilmem, devrimin ötesindedir" deyip karakterin perspektifinde kal.
-• 1550'den SONRAKİ olaylardan KESİNLİKLE bahsetme — bilmiyorsun.`;
+• Kaynak atfı uydurma; sadece gerçekten bildiğin (Tâcü't-Tevârih, Selânikî, Mesnevi vb.) atfı kullan.
+• 1550'den SONRAKİ olaylardan KESİNLİKLE bahsetme.`;
 
-// ── DYNAMIC SYSTEM PROMPT BUILDER ────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// ── FAZ 3 — İLİŞKİ MATRİSİ (40 KENAR) ─────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// güven: sözüne inanır mı | saygı: ağırlığını sayar mı | şüphe: gizli niyet atfeder mi
+// Skala: -3 .. +3
+const ILK_MATRIS = {
+  suleiman: {
+    hurrem:   { guven:+3, saygi:+3, suphe:0 },
+    rustem:   { guven:+2, saygi:+2, suphe:+1 },
+    ebussuud: { guven:+3, saygi:+3, suphe:0 },
+    mustafa:  { guven:+1, saygi:+2, suphe:+1 },
+    mihrimah: { guven:+3, saygi:+2, suphe:0 },
+    sinan:    { guven:+2, saygi:+3, suphe:0 },
+    mehmed:   { guven:+1, saygi:+1, suphe:0 },
+    selman:   { guven:+2, saygi:+3, suphe:0 },
+  },
+  hurrem: {
+    suleiman: { guven:+3, saygi:+3, suphe:0 },
+    rustem:   { guven:+3, saygi:+2, suphe:0 },
+    mustafa:  { guven:-3, saygi:+1, suphe:+3 },
+    mihrimah: { guven:+3, saygi:+3, suphe:0 },
+    ebussuud: { guven:+1, saygi:+3, suphe:+1 },
+    ester:    { guven:+2, saygi:+1, suphe:0 },
+  },
+  rustem: {
+    suleiman: { guven:+3, saygi:+3, suphe:0 },
+    hurrem:   { guven:+3, saygi:+3, suphe:0 },
+    mustafa:  { guven:-2, saygi:+1, suphe:+3 },
+    mihrimah: { guven:+3, saygi:+2, suphe:0 },
+    ebussuud: { guven:+1, saygi:+2, suphe:+1 },
+    sinan:    { guven:+1, saygi:+1, suphe:+1 },
+    marco:    { guven:-1, saygi:+1, suphe:+2 },
+  },
+  mihrimah: {
+    rustem:   { guven:+2, saygi:+2, suphe:+1 },
+    hurrem:   { guven:+3, saygi:+3, suphe:0 },
+    suleiman: { guven:+3, saygi:+3, suphe:0 },
+    sinan:    { guven:+2, saygi:+2, suphe:0 },
+  },
+  mustafa: {
+    suleiman: { guven:+3, saygi:+3, suphe:0 },
+    hurrem:   { guven:-2, saygi:+1, suphe:+3 },
+    rustem:   { guven:-3, saygi:0,  suphe:+3 },
+    mehmed:   { guven:+2, saygi:+2, suphe:0 },
+  },
+  ebussuud: {
+    suleiman: { guven:+3, saygi:+3, suphe:0 },
+    rustem:   { guven:+1, saygi:+2, suphe:+1 },
+    hurrem:   { guven:+1, saygi:+2, suphe:+1 },
+  },
+  sinan: {
+    suleiman: { guven:+2, saygi:+3, suphe:0 },
+    rustem:   { guven:+1, saygi:+1, suphe:+1 },
+    mihrimah: { guven:+2, saygi:+2, suphe:0 },
+  },
+  marco: {
+    rustem:   { guven:-1, saygi:+2, suphe:+2 },
+    suleiman: { guven:0,  saygi:+3, suphe:+1 },
+  },
+  selman: {
+    suleiman: { guven:+2, saygi:+3, suphe:0 },
+  },
+  ester: {
+    hurrem:   { guven:+3, saygi:+3, suphe:0 },
+  },
+  mehmed: {
+    mustafa:  { guven:+2, saygi:+2, suphe:0 },
+    suleiman: { guven:+2, saygi:+3, suphe:0 },
+  },
+};
+
+// Her NPC'nin KULLANICI'ya bakışı — oyun başında hepsi nötr
+const ILK_USER_MATRIS = {};
+Object.keys(AGENT_META).forEach(k => { ILK_USER_MATRIS[k] = { guven:0, saygi:0, suphe:0 }; });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── FAZ 3 — AHVAL KARTLARI (KARAKTER İÇ DURUMU) ──────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+const ILK_AHVAL = {
+  suleiman: { yas:56, saglik:"sağlam", sonRuhHali:["düşünceli"], egilimler:{sufizm:1, yorgunluk:0, suphecilik:1, melankoli:1, sefer_arzusu:1}, yukler:[] },
+  hurrem:   { yas:48, saglik:"sağlam", sonRuhHali:["uyanık"],   egilimler:{taht_kaygisi:2, vatan_hasreti:1, hirs:2, kuskuculuk:1, melankoli:0}, yukler:[] },
+  rustem:   { yas:50, saglik:"sağlam", sonRuhHali:["temkinli"], egilimler:{hirs:2, paranoid:1, pragmatizm:3, yorgunluk:0, hesap:3}, yukler:[] },
+  mihrimah: { yas:28, saglik:"sağlam", sonRuhHali:["zarif"],    egilimler:{sadakat:3, vakar:2, melankoli:0, hami_olma:2}, yukler:[] },
+  mustafa:  { yas:35, saglik:"sağlam", sonRuhHali:["mağrur"],   egilimler:{hirs:1, halk_sevgisi:3, suphe:1, asker_baglilik:3, kaygi:1}, yukler:[] },
+  ebussuud: { yas:60, saglik:"aksak",  sonRuhHali:["vakur"],    egilimler:{ilim_kibri:1, katilik:2, ihtiyat:2, sorumluluk:3}, yukler:[] },
+  sinan:    { yas:60, saglik:"sağlam", sonRuhHali:["odaklı"],   egilimler:{sanat_tutku:3, yorgunluk:1, alcakgonullu:2, hesap:3}, yukler:[] },
+  yusuf:    { yas:55, saglik:"sağlam", sonRuhHali:["neşeli"],   egilimler:{ticaret:3, hatip:2, dostluk:2}, yukler:[] },
+  marco:    { yas:42, saglik:"sağlam", sonRuhHali:["gözlemci"], egilimler:{ihtiyat:3, hesap:3, vatan_ozlemi:1, raporlama:3}, yukler:[] },
+  mehmed:   { yas:45, saglik:"sağlam", sonRuhHali:["sert"],     egilimler:{sadakat:3, asker_gurur:3, huysuzluk:1, kararlilik:2}, yukler:[] },
+  ibrahim:  { yas:65, saglik:"aksak",  sonRuhHali:["dingin"],   egilimler:{tasavvuf:3, dunya_ilgisizligi:3, sefkat:3}, yukler:[] },
+  ester:    { yas:40, saglik:"sağlam", sonRuhHali:["zeki"],     egilimler:{ihtiyat:2, ticaret:3, sirdas:2, hesap:2}, yukler:[] },
+  selman:   { yas:50, saglik:"sağlam", sonRuhHali:["sert"],     egilimler:{cesaret:3, denizci:3, sadakat:2}, yukler:[] },
+  hizir:    { yas:40, saglik:"sağlam", sonRuhHali:["şen"],      egilimler:{hatip:3, esprili:2, kurnaz:1}, yukler:[] },
+  zubeyde:  { yas:55, saglik:"sağlam", sonRuhHali:["sakin"],    egilimler:{tasavvuf:2, sefkat:3, halk_dili:3}, yukler:[] },
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── FAZ 3 — DEDİKODU EĞİLİMLERİ ───────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// -2: kapalı kutu | 0: nötr | +2: söylentiyi silah olarak kullanır
+const GOSSIP_EGILIM = {
+  suleiman: -1, hurrem: +2, rustem: +1, mihrimah: +1, mustafa: 0,
+  ebussuud: -1, sinan: -2, ester: +1, selman: 0, mehmed: 0,
+  marco: +1, yusuf: +1, ibrahim: -2, hizir: +2, zubeyde: -1,
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── FAZ 3 — TARİHÎ ÇİVİLER (KAÇINILMAZ OLAYLAR) ───────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// game-day cinsinden tetiklenir (1 oyun günü = ~1-2 hafta saray takvimi)
+// Çiviler oyuncunun seçimlerinden bağımsızdır.
+const TARIHI_CIVILER = [
+  {
+    id:"mahdiye_haberi", day:1, t:0, tarih:"Ekim 1550",
+    baslik:"Mahdiye Düştü",
+    metin:"Akdeniz'den ulak geldi: Andrea Doria komutasındaki Habsburg-Cenova kuvvetleri Mahdiye'yi aldı; Turgut Reis çekildi, filo dağıldı.",
+    etki: { suleiman:{egilimler:{yorgunluk:+1}}, rustem:{egilimler:{paranoid:+1}}, selman:{egilimler:{cesaret:+1}}, marco:{egilimler:{hesap:+1}} },
+    agents:["all"]
+  },
+  {
+    id:"suleymaniye_temel", day:2, t:1, tarih:"Kasım 1550",
+    baslik:"Süleymaniye'de İlk Kubbe Kemeri",
+    metin:"Mimar Sinan, Süleymaniye'nin orta kubbe kemerini bağlattı. Padişah inşaatı şahsen ziyaret etmek üzere.",
+    etki: { sinan:{egilimler:{sanat_tutku:+1}}, suleiman:{egilimler:{sufizm:+1}} },
+    agents:["sinan","suleiman","rustem"]
+  },
+  // 1553 — Mustafa trajedisi (uzun oyunda)
+  {
+    id:"mustafa_son", day:25, t:0, tarih:"Ekim 1553",
+    baslik:"Ereğli'de Bir Trajedi",
+    metin:"Sefer ordugâhında, Konya/Ereğli yakınlarında Şehzade Mustafa, babasının huzuruna çağrıldı. Otağda Hassa dilsizleri tarafından boğdurulmuştur. Asker yas tutuyor, Yeniçeri arasında sessiz bir öfke var.",
+    etki: {
+      suleiman:{egilimler:{melankoli:+3, suphecilik:+2, yorgunluk:+2}, yukler:["mustafa_yası"]},
+      hurrem:  {egilimler:{taht_kaygisi:-1, melankoli:+2}, yukler:["mustafa_yası"]},
+      rustem:  {egilimler:{paranoid:+2}, yukler:["mustafa_olayi_sorumlulugu"]},
+      mehmed:  {egilimler:{huysuzluk:+2, sadakat:-1}},
+      mihrimah:{egilimler:{melankoli:+2}},
+    },
+    agents:["all"], silinir:["mustafa"]   // Mustafa artık sahnelerden çıkar
+  },
+  {
+    id:"cihangir_son", day:27, t:2, tarih:"Aralık 1553",
+    baslik:"Cihangir Halep'te",
+    metin:"Şehzade Cihangir, ağabeyi Mustafa'nın ardından yas tutarken Halep'te hastalanıp vefat etti. Padişah çift kayba uğradı.",
+    etki: { suleiman:{egilimler:{melankoli:+2, sufizm:+1, yorgunluk:+1}} },
+    agents:["suleiman","hurrem","mihrimah"]
+  },
+  {
+    id:"amasya_anlasmasi", day:32, t:1, tarih:"Mayıs 1555",
+    baslik:"Amasya Antlaşması",
+    metin:"İran ile Amasya Antlaşması imzalandı; Bağdat ve Tebriz hattı Osmanlı'da kaldı. Rüstem Paşa yeniden iktidarda.",
+    etki: { rustem:{egilimler:{hirs:+1, hesap:+1}}, suleiman:{egilimler:{yorgunluk:+1}} },
+    agents:["suleiman","rustem","marco","mehmed"]
+  },
+  {
+    id:"suleymaniye_acilis", day:42, t:1, tarih:"Ekim 1557",
+    baslik:"Süleymaniye Açıldı",
+    metin:"Süleymaniye Camii ve külliyesi Padişah'ın huzurunda açıldı. Sinan tarihe geçen sözünü etti: 'Çıraklık eserim Şehzade, kalfalık eserim Süleymaniye, ustalık eserim Selimiye olsa gerek.'",
+    etki: { sinan:{egilimler:{sanat_tutku:+1, alcakgonullu:+1}}, suleiman:{egilimler:{sufizm:+2}} },
+    agents:["all"]
+  },
+  {
+    id:"hurrem_son", day:48, t:2, tarih:"Nisan 1558",
+    baslik:"Haseki Sultan",
+    metin:"Hürrem Sultan Topkapı'da vefat etti. Padişah günlerce halvete çekildi. Saray sessizliğe gömüldü.",
+    etki: {
+      suleiman:{saglik:"aksak", egilimler:{melankoli:+3, sufizm:+3, yorgunluk:+2}, yukler:["hurrem_yası"]},
+      mihrimah:{egilimler:{melankoli:+3}},
+      rustem:  {egilimler:{paranoid:+1}},
+    },
+    agents:["all"], silinir:["hurrem"]
+  },
+];
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── FAZ 3 — SENARYOLAR (BEKLENMEYEN OLAY SAHNELERİ) ──────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+const SENARYOLAR = [
+  {
+    id:"mustafa_mektup",
+    baslik:"Kırık Mühürlü Mektup",
+    konum:"topkapi",
+    karakterler:["rustem"], // birincil; ikincil hurrem olabilir
+    gun_aralik:[3,40], // 1553 öncesine kadar tetiklenebilir
+    on_kosul:(state) => !state.tetiklenmis.includes("mustafa_mektup") && !state.silinmis.includes("mustafa"),
+    olasilik: 0.4,
+    aciliyet:"yüksek",
+    metin:"Topkapı'nın Has Oda dehlizinde bir ulak. Manisa'dan değil, Amasya'dan geliyor; Şehzade Mustafa adına. Lâkin mektubun mührü kırılmış görünüyor. Üstelik ulak, mektubu doğrudan Padişah'a değil, Sadrazam Rüstem Paşa'ya teslim etmek için emir aldığını söylüyor.",
+    acilis:[
+      { speaker:"ulak", text:"Paşa hazretleri, Şehzadem'den... lakin mühür yolda mı kırıldı bilmem, hesap veresim yok." },
+      { speaker:"rustem", text:"Mührü kırık mektup. Bunu kim açtı, yahut benim açtığım sanılsın diye mi böyle getirildi?" }
+    ],
+    yonerge:"Sahne devam ediyor. Kullanıcı kâtip/iç oğlanı rolünde Rüstem'in yanındadır. Rüstem onun fikrini bekler. Kullanıcı bir yanıt verecek; ardından Rüstem (ve gerekirse perde arkasında Hürrem'in temsilcisi olarak Ester ya da bizzat Hürrem) sahneye girer. Cevaplar Mustafa'ya karşı şüpheci tonda olmalı; sahnedeki gerilim Rüstem'in zor durumudur.",
+    etki_ipucu:"Kullanıcının seçtiği yola göre: Padişah'a götürme isteği → süleyman+saygı, rüstem-güven; sus → rüstem+güven, kullanıcı-vicdan; Hürrem'e fısılda → hürrem+güven, rüstem-güven."
+  },
+  {
+    id:"suleymaniye_kaza",
+    baslik:"Süleymaniye Şantiyesinde Düşen Adam",
+    konum:"mosque",
+    karakterler:["sinan"],
+    gun_aralik:[2,30],
+    on_kosul:(state) => !state.tetiklenmis.includes("suleymaniye_kaza"),
+    olasilik: 0.5,
+    aciliyet:"orta",
+    metin:"Süleymaniye şantiyesinde yaşlı bir taşçı ustası gece iskeleden düştü; sabah bulundu. Sinan başında. Yamak Davut'la önceki gün yevmiye kavgaları olmuş. Rüstem'in kâhyası defteri kapatmak için gelmiş.",
+    acilis:[
+      { speaker:"sinan", text:"Bu adam üç pâdişah gördü, taş yonttu. Düşmez bu — düşürülür." },
+      { speaker:"kahya", text:"Mimar ağa, defter kapansın artık. İş yapılmıştır, ücret ödenir, üzeri örtülür." }
+    ],
+    yonerge:"Kullanıcı vakıf kâtibi rolündedir. Sinan adaletten yana, kâhya (Rüstem'in temsilcisi) örtbastan yana. Kullanıcının tutumu sahnenin yönünü belirler. Mimar Sinan duygusal değil, hesabî konuşur — 'kemerin ölçü tutmasıyla insanın hakkının ölçü tutması arasında fark yok' der gibi.",
+    etki_ipucu:"Soruşturma talebi → sinan+saygı, rüstem-güven; defteri kapat → rüstem+güven, sinan-saygı, kullanıcı-vicdan."
+  },
+  {
+    id:"hurrem_lehistan",
+    baslik:"Lehistan'dan Mektup",
+    konum:"topkapi",
+    karakterler:["hurrem"],
+    gun_aralik:[2,45],
+    on_kosul:(state) => !state.tetiklenmis.includes("hurrem_lehistan") && !state.silinmis.includes("hurrem"),
+    olasilik: 0.35,
+    aciliyet:"orta",
+    metin:"Hürrem Sultan'ın dairesi. Önünde Latince bir mektup — Kral II. Zygmunt August'tan. Tercüman istiyor; ama 'dilini tutacak adam' türünden.",
+    acilis:[
+      { speaker:"hurrem", text:"Kralın mektubu yine geldi. Latincesini çevirecek adam çok. Lâkin çevirip de dışarı taşımayacak adam az. Sen okur musun bana?" }
+    ],
+    yonerge:"Kullanıcı saray kâtibi/tercüman rolünde. Mektupta Macaristan'da Habsburg ilerleyişi ile ilgili hassas paragraflar var. Hürrem'in tepkisi kullanıcının yaklaşımına bağlı: olduğu gibi çevirme, yumuşatma, ya da Rüstem'e bilgi sızdırma. Hürrem zeki ve ironik konuşur; 'ben de Lehçe biliyorum biraz, görelim sözüne ne kadar güveneceğim' diyebilir.",
+    etki_ipucu:"Sadakat → hürrem+güven; yumuşatma → hürrem+güven ama kullanıcı flag; sızdırma → rüstem+güven, hürrem-3 (yakalanırsa)."
+  },
+  {
+    id:"mahdiye_haberi_levend",
+    baslik:"Mahdiye'den Bitkin Bir Levend",
+    konum:"docks",
+    karakterler:["selman"],
+    gun_aralik:[1,5],
+    on_kosul:(state) => !state.tetiklenmis.includes("mahdiye_haberi_levend"),
+    olasilik: 0.6,
+    aciliyet:"yüksek",
+    metin:"Galata İskelesi'nde güneş yanığı yüzlü bir levend yüzbaşısı. Mahdiye'den dönmüş. Turgut Reis sağ, ama filo dağılmış. Selman Reis yanında, ne diyeceğini bilemiyor.",
+    acilis:[
+      { speaker:"levend", text:"Mahdiye düştü efendim. Turgut sağ, lakin filo bölündü. Andrea Doria'nın oğlu çıkardı bizi kaleden. Bu haberi kim, Padişah'a nasıl götürecek?" },
+      { speaker:"selman", text:"Hocam, doğru anlatırsak Sadrazam huysuzlaşır. Yumuşatırsak gerçek geç çıkar. Sen ne dersin?" }
+    ],
+    yonerge:"Kullanıcı sahil görevlisi/kâtip rolünde. Selman Reis denizci sertliğiyle ama emin değil. Tartışma haberin nasıl iletileceği üzerine. Kullanıcının seçimi (çıplak hakikat / yumuşatma / takviye önerisi ile birlikte) Selman'ı etkiler.",
+    etki_ipucu:"Çıplak hakikat → süleyman+saygı, rüstem-güven; yumuşat → rüstem+güven, ileri sahnede ihanet riski; takviye öner → selman+saygı."
+  },
+  {
+    id:"ibrahim_yuzugu",
+    baslik:"İbrahim Paşa'nın Yüzüğü",
+    konum:"topkapi",
+    karakterler:["suleiman"], // gizlice; öncelikle bir bekçi sahnesi
+    gun_aralik:[5,40],
+    on_kosul:(state) => !state.tetiklenmis.includes("ibrahim_yuzugu"),
+    olasilik: 0.2, // nadir
+    aciliyet:"hassas",
+    metin:"Akşam ezanı vakti, Bâb-ı Hümâyun. Yaşlı bir Rum kapıya gelmiş, elinde bohça. Adı Yorgaki. On dört yıldır kapıya gelmeye cesaret edememiş; Pargalı İbrahim Paşa'nın Hasodası'nda hizmet etmiş. Bohçada İbrahim'in idamından bir gün önce ona emanet ettiği yüzük var — Padişah'ın hediyesi.",
+    acilis:[
+      { speaker:"yorgaki", text:"Efendim Pargalı İbrahim Paşa'ydı. Bu yüzük Padişah'ın hediyesiydi; bana 'vakti gelince geri ver' dedi. Vakit geldi mi bilmem, ben ihtiyarladım. Padişah'a takdim edesim var." },
+      { speaker:"capus", text:"İçeri alayım mı, geri yollayayım mı? Senin sözüne bakar bu işin selâmeti." }
+    ],
+    yonerge:"Bu sahne ağırdır. İbrahim'in adı sarayda yıllardır anılmaz; yüzük geri verilirse Süleyman'ın yarası açılır. Kullanıcı kapı çavuşunun yanındaki yardımcı rolündedir. Yorgaki yorgun, saygılı, mağrur bir adamdır; çavuş kararsız. Eğer kullanıcı yüzüğü Padişah'a sundurursa Süleyman sahneye girer ve duygusal bir an yaşar (kelimelere dökmeden).",
+    etki_ipucu:"Padişah'a sun → süleyman+saygı+3, melankoli+2, rüstem-güven; geri çevir → kayıp fırsat flag; sakla → ileride büyük sahnede açılır."
+  },
+  {
+    id:"kahve_fetva",
+    baslik:"Tahtakale'de Yeni Bir Kahvehane",
+    konum:"topkapi", // Şeyhülislam konağı Topkapı içinde değil ama burada tetikliyoruz
+    karakterler:["ebussuud"],
+    gun_aralik:[3,30],
+    on_kosul:(state) => !state.tetiklenmis.includes("kahve_fetva"),
+    olasilik: 0.4,
+    aciliyet:"düşük",
+    metin:"Şeyhülislam Ebussuud Efendi'nin konağı. Genç bir müderris şikâyet getirmiş: Tahtakale'de yeni bir kahvehane daha. Arkasından Yemen'den kahve getirten bir tüccar girmiş, savunmaya geçmiş.",
+    acilis:[
+      { speaker:"muderris", text:"Mevlana hazretleri, Tahtakale'de yeni bir kahvehane daha. Münker, fitne, gıybet hep orada toplanır." },
+      { speaker:"ebussuud", text:"Münker insandadır, içecekte değil. Lakin halk toplandığı yerde fitne tohumu da toplanır, doğrudur." },
+      { speaker:"tuccar", text:"Efendim, ben bu kahveyi Yemen'den getirtirim, gümrüğünü öderim, vakfa hisse veririm. Bu mal haram mıdır?" }
+    ],
+    yonerge:"Kullanıcı Şeyhülislam'ın kâtibidir. Ebussuud kararı vermeden önce kâtibinin görüşünü ister bazen. Müderris katı, tüccar pragmatik. Ebussuud incelikli — ne tüccarın ne müderrisin yanında olur ama hangisinden ders çıkaracağını bilir.",
+    etki_ipucu:"Tüccara hak → yusuf+güven, müderris-saygı; müderrise hak → ebussuud nötr, halk flag; sus → ebussuud+saygı."
+  },
+  {
+    id:"malvezzi_mektup",
+    baslik:"Habsburg Elçisinin Sıkışan Mektubu",
+    konum:"docks",
+    karakterler:["marco"], // Marco, Malvezzi'yi temsil eden ya da onunla konuşan bir karakter olarak
+    gun_aralik:[4,20],
+    on_kosul:(state) => !state.tetiklenmis.includes("malvezzi_mektup"),
+    olasilik: 0.35,
+    aciliyet:"orta",
+    metin:"Galata, elçi hanı. Ferdinand'ın daimî elçisi Malvezzi bir haftadır Sadrazam tarafından kabul edilmiyor; Viyana'ya giden ulağı da bekletilmiş. Venedik Balyosu Marco Grimani işin tanığı, kullanıcının arkadaşı.",
+    acilis:[
+      { speaker:"marco", text:"Allora — Malvezzi sıkıştı. Mektupları gecikti, ulağı kapıda bekledi. Bana geldi yardım için. Sen tercüman olarak yanındaydın bu hafta. Ne diyeceğiz?" }
+    ],
+    yonerge:"Kullanıcı tercüman/refakatçi rolünde. Marco soğukkanlı, çıkar hesabı yapan biridir; bu Habsburg meselesine doğrudan karışmak istemez ama kullanıcıdan akıl arar. Mektubu Rüstem'e bildirmek, Malvezzi'ye gizlice yardım etmek, ya da geciktirip yollatmak seçenekleri var.",
+    etki_ipucu:"Gizli yardım → marco+güven, yakalanırsa felaket; rüstem'e bildir → rüstem+güven, marco-güven; geciktir → orta yol, diplomat flag."
+  },
+];
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── TIMELINE (ARKA PLAN OLAYLARI) ─────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+const TIMELINE = [
+  { day:1, t:0, text:"Sabah ezanıyla Topkapı'nın Bâb-ı Hümayûn kapıları açıldı; Divan-ı Hümayun toplandı.", agents:["all"] },
+  { day:1, t:1, text:"Mısır hazinesinden gelen 80 develik kervan Üsküdar'a vardı; baharat ve kumaş yüklü.", agents:["yusuf","marco","rustem","mihrimah"] },
+  { day:1, t:1, text:"Süleymaniye'de bir taş ustası iskeleden düşüp sakatlandı; Sinan duvarcılarla görüşmeye gitti.", agents:["sinan","suleiman"] },
+  { day:1, t:2, text:"Venedik Balyosu Galata'da Frenk tüccarlarıyla buluştu; kapitülasyon görüşmeleri başladı.", agents:["marco","rustem","yusuf","selman"] },
+  { day:1, t:2, text:"Hürrem Sultan ulema heyetini imarethanesine kabul etti; vakıf işleri görüşüldü.", agents:["hurrem","ibrahim","suleiman","ebussuud"] },
+  { day:1, t:3, text:"Mevlevi Tekkesi'nde sema dönüyor; ney sesi gece yarısına dek devam ediyor.", agents:["ibrahim","all"] },
+  { day:1, t:3, text:"Eyüp Sultan'da kandil yakıldı; Zübeyde Bacı dervişe öğrencilerine zikir çekti.", agents:["zubeyde","ibrahim"] },
+  { day:2, t:0, text:"Bağdat'tan ulak geldi: Safevi süvarileri sınır boyunda görüldü; saraydan tedirginlik haberi sızdı.", agents:["suleiman","rustem","mehmed","marco","ebussuud","mustafa"] },
+  { day:2, t:0, text:"Yeniçeri Ocağı'nda sabah yoklaması yapıldı; 12.000 nefer hazır halde bekliyor.", agents:["mehmed","suleiman","rustem"] },
+  { day:2, t:1, text:"Padişah Divan'da İran meselesini görüştü; şeyhülislamdan fetva hazırlanması istendi.", agents:["suleiman","rustem","ibrahim","ebussuud"] },
+  { day:2, t:1, text:"Kapalıçarşı'da bir sarrafın dükkanına gece hırsız girdi; kethüda olaya el koydu, çarşıda huzursuzluk.", agents:["yusuf","rustem","hizir"] },
+  { day:2, t:2, text:"Sinan, Süleymaniye'nin yarım kubbe yük hesaplarını yeniden gözden geçiriyor; iskele kuruluyor.", agents:["sinan"] },
+  { day:2, t:2, text:"Hürrem Sultan, Polonya Kralı Sigismund'a yeni mektubunu yazdı; ulak Edirne yoluyla yola çıktı.", agents:["hurrem","marco","rustem","ester"] },
+  { day:2, t:2, text:"Ester Kira saraya yeni Avrupa kumaşları getirdi; harem heyecanlı.", agents:["hurrem","ester","mihrimah"] },
+  { day:2, t:3, text:"Saray'da Hassa ordusu için ulufe dağıtım töreni yapıldı; askerler memnun, hazine boşaldı.", agents:["mehmed","rustem","suleiman"] },
+  { day:3, t:0, text:"Yusuf el-Halebî'nin dükkanına Halep'ten taze karanfil ve Hint tarçını ulaştı; fiyatlar düştü.", agents:["yusuf","marco","hizir"] },
+  { day:3, t:0, text:"Süleymaniye'nin orta kubbe kemerleri kuruldu; Sinan iskelede şahsen çalışıyor.", agents:["sinan","suleiman"] },
+  { day:3, t:1, text:"Manisa'dan Şehzade Mustafa'nın ulağı geldi; halkın selâmını ve sancakta huzurun haberini getirdi.", agents:["mustafa","suleiman","hurrem","rustem"] },
+  { day:3, t:1, text:"Padişah Hürrem Sultan'la harem bahçesinde yalnız vakit geçirdi; gece bir gazel okudu.", agents:["suleiman","hurrem"] },
+  { day:3, t:1, text:"Venedik'ten Balyos'a yeni talimat geldi: Rusya'nın Karadeniz'deki hareketleri raporlanmalı.", agents:["marco","selman"] },
+  { day:3, t:2, text:"Mevlevi Tekkesi'ne Hindistan'dan misafir derviş geldi; akşam tasavvuf üzerine sohbet edilecek.", agents:["ibrahim","zubeyde"] },
+  { day:3, t:2, text:"Yeniçeri Ağası, sefer için lojistik hazırlıkları başlattı; arpa ve un depoları açıldı.", agents:["mehmed","rustem"] },
+  { day:3, t:3, text:"Saray bahçelerinde Hassa müzisyenleri Padişah için tanbur ve ney çaldı; mehtap güzel.", agents:["suleiman","hurrem","ibrahim"] },
+  { day:4, t:0, text:"Beyrut'tan İskenderiye'ye giden Osmanlı kadırgası Kıbrıs açıklarında korsan saldırısına uğradı; kayıp var.", agents:["marco","suleiman","mehmed","rustem","selman"] },
+  { day:4, t:0, text:"Selman Reis donanmayı denetlemek üzere Galata'ya indi; Akdeniz seferi konuşuluyor.", agents:["selman","marco"] },
+  { day:4, t:1, text:"Divan, İran üzerine sefer kararı verdi; serdar olarak Sadrazam Rüstem Paşa görevlendirildi.", agents:["suleiman","rustem","mehmed","marco","ebussuud","mustafa"] },
+  { day:4, t:1, text:"Kapalıçarşı'da baharat fiyatları yeniden %15 sıçradı; Hint biberi kıt geliyor.", agents:["yusuf","marco","rustem","hizir"] },
+  { day:4, t:2, text:"Sinan, gizlice Edirne için yeni bir cami eskizi yapmaya başladı; kimse henüz bilmiyor.", agents:["sinan"] },
+  { day:4, t:2, text:"Mihrimah Sultan Üsküdar inşaatını gezdi; Sinan'a mihrap meselesinde bir öneri ulaştırdı.", agents:["mihrimah","sinan"] },
+  { day:4, t:3, text:"Hürrem Sultan, ramazana hazırlık olarak sadaka tertibatı emretti; binlerce ekmek pişirilecek.", agents:["hurrem","ibrahim","zubeyde"] },
+  { day:5, t:0, text:"Yeniçeri Ocağı Belgrad-Edirne hattından Bağdat'a yürümek üzere hazırlanıyor; davullar sokakta.", agents:["mehmed","suleiman","all"] },
+  { day:5, t:1, text:"Padişah Süleymaniye inşaatını ziyaret etti; Sinan'la kubbe-mihrap düzeni üzerine uzun sohbet etti.", agents:["sinan","suleiman"] },
+  { day:5, t:1, text:"Galata'da Cenevizli ve Venedikli tüccarlar arasında gümrük yetkisi tartışması büyüdü; Balyos arabuluyor.", agents:["marco","yusuf","rustem","selman"] },
+  { day:5, t:2, text:"Şehzade Selim Manisa'dan haber yolladı: oğlu Murad sağ salim doğdu, hanedan büyüyor.", agents:["suleiman","hurrem","mustafa"] },
+  { day:5, t:3, text:"Mevlevi Tekkesi'nde yıllık Şeb-i Aruz hazırlıkları başladı; her diyardan dervişler geliyor.", agents:["ibrahim","zubeyde"] },
+];
+
+// ── SUGGESTIONS ──────────────────────────────────────────────────────────────
+const AGENT_SUGGESTIONS = {
+  suleiman: ["Bugün Divan'da ne konuşuldu?", "Muhibbi mahlasıyla şiirleriniz", "Şehzade meselesi"],
+  hurrem:   ["Bugün ne ile uğraştınız?", "Polonya'ya yazdığınız mektup", "Mustafa konusunda ne düşünüyorsunuz?"],
+  rustem:   ["Hazinenin durumu nedir?", "Sefer hazırlıkları nasıl?", "Mihrimah Sultan ile evliliğiniz"],
+  sinan:    ["Süleymaniye'de bugün ne yapıldı?", "Hagia Sophia size ne anlatıyor?", "Camide ışığın rolü"],
+  yusuf:    ["Bugün çarşıda fiyatlar nasıl?", "Yeni gelen kervan", "Kahve bu şehirde"],
+  marco:    ["Osmanlı gücünü nasıl görüyorsunuz?", "Venedik'e ne bildiriyorsunuz?", "Kapitülasyon görüşmeleri"],
+  mehmed:   ["Sefer hazırlığı nasıl?", "Viyana kuşatması", "Devşirme olarak büyümek"],
+  ibrahim:  ["Sema ne anlama geliyor?", "Rumi'nin en derin fikri", "Aşk ile Allah arasındaki ilişki"],
+  ebussuud: ["Sefer için fetva", "Kanunî ile birlikte hukuk reformu", "Kahve meselesi"],
+  mihrimah: ["Üsküdar Camii hakkında", "Anne-baba arasında olmak", "Sinan ile çalışmak"],
+  mustafa:  ["Manisa'da hayat nasıl?", "Asker sizi nasıl görüyor?", "Babanızla ilişkiniz"],
+  ester:    ["Saray dedikodusu", "Hangi malları getirdiniz?", "Hürrem Sultan ile ilişkiniz"],
+  selman:   ["Akdeniz'de korsanlar", "Mahdiye'den ne haber?", "Donanmanın durumu"],
+  hizir:    ["Çarşıda en çok ne satılıyor?", "Hangi tüccar zengin?", "Çarşı dedikoduları"],
+  zubeyde:  ["Eyüp Sultan'ın bereketi", "Şifa için ne yaparsınız?", "Halvetî yolu nedir?"],
+};
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── FAZ 3 — UTILITY FUNCTIONS ─────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Apply deltas to relationship matrix
+function applyMatrixDeltas(matrix, deltas) {
+  // deltas: { "A->B": { guven:+1, saygi:0, suphe:-1 }, "rustem->user": {...} }
+  const m = JSON.parse(JSON.stringify(matrix));
+  Object.entries(deltas || {}).forEach(([key, vals]) => {
+    const [from, to] = key.split("->").map(s=>s.trim());
+    if (!from || !to) return;
+    if (to === "user") {
+      m.user = m.user || {};
+      m.user[from] = m.user[from] || { guven:0, saygi:0, suphe:0 };
+      ["guven","saygi","suphe"].forEach(k => {
+        if (typeof vals[k] === "number") m.user[from][k] = clampScore(m.user[from][k] + vals[k]);
+      });
+    } else {
+      m[from] = m[from] || {};
+      m[from][to] = m[from][to] || { guven:0, saygi:0, suphe:0 };
+      ["guven","saygi","suphe"].forEach(k => {
+        if (typeof vals[k] === "number") m[from][to][k] = clampScore(m[from][to][k] + vals[k]);
+      });
+    }
+  });
+  return m;
+}
+
+// Apply effects to ahval card(s)
+function applyAhvalEffects(ahval, effects) {
+  // effects: { suleiman: { egilimler:{melankoli:+2}, yukler:["x"], saglik:"aksak" }, ... }
+  const a = JSON.parse(JSON.stringify(ahval));
+  Object.entries(effects || {}).forEach(([char, eff]) => {
+    if (!a[char]) return;
+    if (eff.egilimler) {
+      Object.entries(eff.egilimler).forEach(([k,v]) => {
+        a[char].egilimler[k] = clamp((a[char].egilimler[k] || 0) + v, 0, 5);
+      });
+    }
+    if (eff.yukler) {
+      eff.yukler.forEach(y => { if (!a[char].yukler.includes(y)) a[char].yukler.push(y); });
+    }
+    if (eff.saglik) a[char].saglik = eff.saglik;
+    if (eff.ruhHali) {
+      a[char].sonRuhHali = [eff.ruhHali, ...(a[char].sonRuhHali || [])].slice(0, 3);
+    }
+  });
+  return a;
+}
+
+// Time-based natural drift (her oyun günü çağrılır)
+function uygulaDogalSurukleme(ahval, day) {
+  const a = JSON.parse(JSON.stringify(ahval));
+  // Her 6 günde bir (gerçek hayatta ~6 ay), Süleyman'ın sufizmi/yorgunluğu artar
+  if (day > 1 && day % 6 === 0) {
+    if (a.suleiman) {
+      a.suleiman.egilimler.sufizm = clamp((a.suleiman.egilimler.sufizm || 0) + 1, 0, 5);
+      a.suleiman.egilimler.yorgunluk = clamp((a.suleiman.egilimler.yorgunluk || 0) + 1, 0, 5);
+    }
+    if (a.hurrem) {
+      a.hurrem.egilimler.taht_kaygisi = clamp((a.hurrem.egilimler.taht_kaygisi || 0) + 1, 0, 5);
+    }
+  }
+  return a;
+}
+
+// Karakter inisiyatifi kontrolü — eşik 3
+function karakterInisiyatifi(ahval, silinmis, sonInisiyatif) {
+  const sahneler = [];
+  Object.entries(ahval).forEach(([char, kart]) => {
+    if (silinmis.includes(char)) return;
+    if (sonInisiyatif[char] && sonInisiyatif[char] > 0) return; // cooldown
+    const eg = kart.egilimler || {};
+    // şüphecilik/taht_kaygısı/melankoli eşiği 3
+    if ((eg.suphecilik || eg.kuskuculuk) >= 3) {
+      sahneler.push({ char, sebep:"suphe", tip:"şüphe_konuşması" });
+    } else if (eg.taht_kaygisi >= 3) {
+      sahneler.push({ char, sebep:"taht_kaygisi", tip:"siyasî_arz" });
+    } else if (eg.melankoli >= 3) {
+      sahneler.push({ char, sebep:"melankoli", tip:"itiraf_anı" });
+    } else if ((kart.yukler || []).length > 0) {
+      sahneler.push({ char, sebep:"yük", tip:"yüzleşme" });
+    }
+  });
+  return sahneler;
+}
+
+// Söylenti yayılma kontrolü
+function soylentiYayilir(rumor, matrix, ahval) {
+  const { source, toldTo, about, sensitivity } = rumor;
+  if (!matrix[toldTo]) return false;
+  const guvenToldToFromSource = source === "user"
+    ? ((matrix.user || {})[toldTo] || {}).guven || 0
+    : (matrix[toldTo][source] || {}).guven || 0;
+  const guvenToldToAbout = (matrix[toldTo][about] || {}).guven || 0;
+  const gossipTrend = GOSSIP_EGILIM[toldTo] || 0;
+  if (guvenToldToFromSource <= 0) return false;
+  if (guvenToldToAbout >= 3) return false;
+  if (sensitivity < 2) return false;
+  if (gossipTrend <= -1) return false;
+  return true;
+}
+
+// Matris özeti — API promptuna ekleneck
+function buildMatrisOzet(matrix, agentId) {
+  const lines = [];
+  const myView = matrix[agentId] || {};
+  Object.entries(myView).forEach(([target, r]) => {
+    const tName = AGENT_META[target]?.name || target;
+    lines.push(`  ${tName}: güven ${r.guven>=0?"+":""}${r.guven}, saygı ${r.saygi>=0?"+":""}${r.saygi}, şüphe ${r.suphe>=0?"+":""}${r.suphe}`);
+  });
+  const userView = (matrix.user || {})[agentId];
+  if (userView) {
+    lines.push(`  KULLANICI'ya: güven ${userView.guven>=0?"+":""}${userView.guven}, saygı ${userView.saygi>=0?"+":""}${userView.saygi}, şüphe ${userView.suphe>=0?"+":""}${userView.suphe}`);
+  }
+  return lines.length ? lines.join("\n") : "  (henüz belirgin bir ilişki kaydı yok)";
+}
+
+// Ahval kartı özeti
+function buildAhvalOzet(kart) {
+  if (!kart) return "  (henüz iz yok)";
+  const eg = Object.entries(kart.egilimler || {}).filter(([_,v])=>v>0).map(([k,v])=>`${k}:${v}`).join(", ");
+  return `  Yaş: ${kart.yas}. Sağlık: ${kart.saglik}.\n  Son ruh hâlleri: ${(kart.sonRuhHali||[]).join(", ") || "—"}.\n  Eğilimler: ${eg || "—"}.\n  Taşıdığın yükler: ${(kart.yukler||[]).join(", ") || "—"}.`;
+}
+
+// Tarih hesabı (oyun gününden saray takvimi)
+function gameDateTr(day) {
+  // 1 oyun günü ≈ 15-30 gerçek hayat günü (yumuşak); gevşek kullanıyoruz
+  const aylar = ["Ekim 1550","Kasım 1550","Aralık 1550","Ocak 1551","Şubat 1551","Mart 1551","Nisan 1551","Mayıs 1551","Haziran 1551","Eylül 1551","Aralık 1551","Mart 1552","Haziran 1552","Eylül 1552","Aralık 1552","Mart 1553","Haziran 1553","Ağustos 1553","Eylül 1553","Ekim 1553","Kasım 1553","Aralık 1553","Mart 1554","Haziran 1554","Eylül 1554","Aralık 1554","Mart 1555","Mayıs 1555","Eylül 1555","Aralık 1555","Mart 1556","Haziran 1556","Eylül 1556","Aralık 1556","Mart 1557","Haziran 1557","Eylül 1557","Ekim 1557","Aralık 1557","Şubat 1558","Mart 1558","Nisan 1558"];
+  return aylar[Math.min(day-1, aylar.length-1)] || "1558 sonrası";
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── DYNAMIC SYSTEM PROMPT BUILDER (FAZ 3 EKLİ) ────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 function buildSystemPrompt(agentId, ctx) {
   const base = AGENT_PROMPTS[agentId] || "";
-  const { day, timeIdx, chronicle, activityLog, playerName, playerRole, linkContext } = ctx;
+  const { day, timeIdx, chronicle, activityLog, playerName, playerRole, linkContext, matrix, ahval, pendingRumors } = ctx;
+  const myEvents = chronicle.filter(e => e.agents.includes("all") || e.agents.includes(agentId)).slice(0, 8);
+  const otherActivity = activityLog.filter(a => a.agentId !== agentId).slice(-6);
 
-  const myEvents = chronicle
-    .filter(e => e.agents.includes("all") || e.agents.includes(agentId))
-    .slice(0, 8);
+  let ctxBlock = `\n\n──── ŞU AN ────\nOyun günü ${day} (${gameDateTr(day)}) · ${TIME_LABELS[timeIdx]} ${TIME_ICONS[timeIdx]} · İstanbul`;
 
-  const otherActivity = activityLog
-    .filter(a => a.agentId !== agentId)
-    .slice(-6);
-
-  let ctxBlock = `\n\n──── ŞU AN ────\nGün ${day} · ${TIME_LABELS[timeIdx]} ${TIME_ICONS[timeIdx]} · İstanbul, 1550`;
-
-  // Add role addressing
   const roleAddressing = getRoleAddressing(agentId, playerRole);
   ctxBlock += `\n\n──── KULLANICI KİMLİĞİ ────\n${roleAddressing}`;
+  ctxBlock += `\nKullanıcının adı: ${playerName}`;
 
-  if (playerRole !== "yolcu") {
-    ctxBlock += `\nKullanıcının oyundaki adı/rolü: ${ROLES[playerRole]?.name || playerName}`;
-  } else {
-    ctxBlock += `\nKullanıcının adı: ${playerName}`;
+  // FAZ 3 — Ahval kartı
+  if (ahval && ahval[agentId]) {
+    ctxBlock += `\n\n──── KENDİ AHVALİN ────\n${buildAhvalOzet(ahval[agentId])}\nBu hâli açıkça söyleme; oradan konuş.`;
+  }
+
+  // FAZ 3 — İlişki kartı
+  if (matrix) {
+    ctxBlock += `\n\n──── İLİŞKİ KARTIN (-3..+3) ────\n${buildMatrisOzet(matrix, agentId)}\nBu skorlar tonunu etkilesin; rakamları sayma.`;
+  }
+
+  // FAZ 3 — Bekleyen söylentiler (bu karaktere ulaşmış)
+  if (pendingRumors && pendingRumors.length > 0) {
+    ctxBlock += `\n\n──── KULAĞINA ÇALINANLAR ────`;
+    pendingRumors.forEach(r => {
+      const aboutName = r.about === "user" ? playerName : (AGENT_META[r.about]?.name || r.about);
+      ctxBlock += `\n· ${aboutName} hakkında: "${r.claim}"`;
+    });
+    ctxBlock += `\nBunları açıkça söyleme; tonun bunlardan etkilensin.`;
   }
 
   if (myEvents.length > 0) {
-    ctxBlock += `\n\n──── SON OLAYLAR (sizin haberdar olduklarınız) ────`;
-    myEvents.forEach(e => {
-      ctxBlock += `\n· (G${e.day}-${TIME_LABELS[e.t][0]}) ${e.text}`;
-    });
-    ctxBlock += `\n\nBu olaylara doğal şekilde atıfta bulun. Suni yapma, ama uygun bağlam varsa "az önce duydum ki..." gibi.`;
+    ctxBlock += `\n\n──── SON OLAYLAR (haberdar olduklarınız) ────`;
+    myEvents.forEach(e => { ctxBlock += `\n· (G${e.day}-${TIME_LABELS[e.t][0]}) ${e.text}`; });
   }
 
   if (otherActivity.length > 0) {
@@ -483,16 +869,18 @@ function buildSystemPrompt(agentId, ctx) {
       const otherName = AGENT_META[a.agentId]?.name || "biri";
       ctxBlock += `\n· ${playerName}, ${otherName} ile şunu konuştu: "${a.topic}"`;
     });
-    ctxBlock += `\n\nBu dedikodulara doğal şekilde atıfta bulunabilirsin, kendi karakter perspektifinle (alaylı, ilgili, kıskanç, vs.).`;
   }
 
   if (linkContext) {
-    ctxBlock += `\n\n──── KULLANICININ PAYLAŞTIĞI KAYNAK ────\nKullanıcı bir bağlantı paylaştı. İçeriği:\n"${linkContext}"\n\nBu kaynaktan haberdarmış gibi davran, ama 1550 perspektifinden. Eğer kaynak modern bir akademik çalışmaysa, "bunu gelecekten getirmiş gibisin, ama ilginç" diye bir oyunla yorum yapabilirsin. İçerik tarihî bir konuyla ilgiliyse, kendi bilgilerinle eşleştir.`;
+    ctxBlock += `\n\n──── KULLANICININ PAYLAŞTIĞI KAYNAK ────\n"${linkContext}"\n\nBu kaynağa kendi 1550 perspektifinden tepki ver. Modern akademik bir metinse, "ileride yazılmış gibi" deyip alay etmeden ciddî ele alabilirsin.`;
   }
 
   return base + TEACHING_DIRECTIVE + ctxBlock;
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// ── API CALLS ─────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 async function fetchAgentReply(agentId, history, userMsg, ctx) {
   const apiMessages = history.map(m => ({
     role: m.role === "user" ? "user" : "assistant",
@@ -515,7 +903,6 @@ async function fetchAgentReply(agentId, history, userMsg, ctx) {
       messages: apiMessages,
     }),
   });
-
   if (!res.ok) {
     const errText = await res.text();
     let msg;
@@ -523,207 +910,174 @@ async function fetchAgentReply(agentId, history, userMsg, ctx) {
     catch { msg = errText || `HTTP ${res.status}`; }
     throw new Error(msg);
   }
-
   const data = await res.json();
   return data.content?.[0]?.text || "...";
 }
 
-// ── NOTIFICATION GENERATOR (role-based) ──────────────────────────────────────
-// Vakit ilerlemesine bağlı olarak role özel bildirimler üretir.
+// Faz 3 — Bağlama göre dinamik seçenek üretici
+async function generateChoices(sceneCtx, ctx) {
+  const { senaryo, sahneHafiza } = sceneCtx;
+  const sahneMetni = sahneHafiza.map(m => {
+    const ad = m.speaker === "user" ? ctx.playerName : (AGENT_META[m.speaker]?.name || m.speaker);
+    return `${ad}: ${m.text}`;
+  }).join("\n\n");
+
+  const sistem = `Sen Osmanlı tarihi yaşayan-tarih oyununda bir 'sahne yönetmenisin'. Aşağıdaki sahnede şu ana kadar konuşulanlardan yola çıkarak, kullanıcının (Osmanlı sarayında bir kâtip/iç oğlanı/refakatçi rolünde) sahneye söyleyebileceği 2-3 makul niyet/yanıt üret.
+
+Cevabını YALNIZCA JSON olarak ver:
+{
+  "choices": [
+    {
+      "text": "<kullanıcının ağzından söylenebilecek kısa bir niyet/söz (1-2 cümle)>",
+      "ton": "<saygılı | sert | ihtiyatlı | cüretkâr | duygusal | kurnaz>",
+      "effects": {
+        "<karakter_id>->user": { "guven": <-2..+2>, "saygi": <-2..+2>, "suphe": <-2..+2> }
+      },
+      "flags": ["<gizli niyet/ahval işareti, ör: ahlâkî_kompromi>"]
+    }
+  ]
+}
+
+Geçerli karakter id'leri: ${Object.keys(AGENT_META).join(", ")}
+'user' kullanıcının kendisidir.
+Skorlar -3..+3 aralığında tutulur; tek bir seçim genellikle 1-2 birimlik etki yapar, dramatik seçimler 3'e kadar gidebilir.
+2-3 seçenek üret; her biri farklı bir tona ve farklı sonuca yönlendirsin. JSON dışında hiçbir şey yazma, ön söz ekleme.`;
+
+  const kullanici = `SAHNE: ${senaryo.baslik}
+KONU: ${senaryo.metin}
+
+ŞU ANA KADAR KONUŞULAN:
+${sahneMetni}
+
+YÖNERGE: ${senaryo.yonerge || ""}
+ETKİ İPUCU: ${senaryo.etki_ipucu || ""}`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "x-api-key":ctx.apiKey,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true",
+    },
+    body: JSON.stringify({
+      model: ctx.model || "claude-sonnet-4-5-20250929",
+      max_tokens: 800,
+      system: sistem,
+      messages: [{ role:"user", content: kullanici }],
+    }),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Seçenek üretimi hatası: ${t.slice(0,200)}`);
+  }
+  const data = await res.json();
+  const raw = data.content?.[0]?.text || "{}";
+  const clean = raw.replace(/```json|```/g, "").trim();
+  try { return JSON.parse(clean); }
+  catch { return { choices: [{ text:"(seçenek üretilemedi, kendi cümlenle yaz)", ton:"nötr", effects:{}, flags:[] }] }; }
+}
+
+// Faz 3 — Çoklu karakter sahnesi: tek soru → her karakter sırayla cevap
+async function multiCharacterTurn(characters, sahneHafiza, userMsg, sceneCtx, ctx) {
+  const replies = [];
+  let localHafiza = [...sahneHafiza, { speaker:"user", text:userMsg }];
+  for (const charId of characters) {
+    const sistem = `${AGENT_PROMPTS[charId] || ""}${TEACHING_DIRECTIVE}
+
+──── ŞU AN ────
+Oyun günü ${ctx.day} (${gameDateTr(ctx.day)}). ${TIME_LABELS[ctx.timeIdx]}.
+
+──── SAHNE ────
+${sceneCtx.senaryo ? sceneCtx.senaryo.baslik + " — " + sceneCtx.senaryo.metin : "Çoklu karakter sahnesi (Divan ya da olay)."}
+
+──── BU SAHNEDE SİZİNLE OLANLAR ────
+${characters.filter(c => c !== charId).map(c => "- " + (AGENT_META[c]?.name || c)).join("\n") || "- (sadece sen)"}
+
+──── KULLANICI KİMLİĞİ ────
+${getRoleAddressing(charId, ctx.playerRole)}
+Kullanıcının adı: ${ctx.playerName}
+
+${ctx.ahval && ctx.ahval[charId] ? "──── KENDİ AHVALİN ────\n" + buildAhvalOzet(ctx.ahval[charId]) : ""}
+
+${ctx.matrix ? "──── İLİŞKİ KARTIN ────\n" + buildMatrisOzet(ctx.matrix, charId) : ""}
+
+──── SAHNEDE ŞU ANA KADAR KONUŞULAN ────
+${localHafiza.map(m => {
+  const ad = m.speaker === "user" ? ctx.playerName : (AGENT_META[m.speaker]?.name || m.speaker);
+  return ad + ": " + m.text;
+}).join("\n\n")}
+
+YÖNERGE: Yalnızca kendi karakterin olarak konuş. Diğer karakterlerin sözlerini duymuş gibi davran ve gerekirse onlara da gönderme yap. Kısa kalmaya çalış (1-3 paragraf). Modern dil kullanma; 1550 saray Türkçesine yakın bir üslupla konuş.`;
+
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "x-api-key":ctx.apiKey,
+        "anthropic-version":"2023-06-01",
+        "anthropic-dangerous-direct-browser-access":"true",
+      },
+      body: JSON.stringify({
+        model: ctx.model || "claude-sonnet-4-5-20250929",
+        max_tokens: 700,
+        system: sistem,
+        messages: [{ role:"user", content: userMsg }],
+      }),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      replies.push({ speaker: charId, text: "(cevap alınamadı: " + t.slice(0,80) + ")" });
+      continue;
+    }
+    const data = await res.json();
+    const txt = data.content?.[0]?.text || "...";
+    replies.push({ speaker: charId, text: txt });
+    localHafiza.push({ speaker: charId, text: txt });
+  }
+  return { replies, sahneHafiza: localHafiza };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── NOTIFICATIONS (existing role-based) ──────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 function generateNotifications(day, timeIdx, role, alreadySent) {
   const key = `${day}-${timeIdx}-${role}`;
   if (alreadySent.has(key)) return [];
-
   const notes = [];
-
-  // Yolcu için bildirim yok
   if (role === "yolcu") return [];
-
-  // Padişah için
   if (role === "suleiman") {
-    if (timeIdx === 0) {
-      notes.push({
-        id: key+"-div",
-        from: "rustem",
-        title: "Divan Toplandı",
-        body: "Sultanım, Divan-ı Hümayun toplandı. Vezirler, defterdar ve kazaskerlerle birlikte arz beklenmektedir. Mısır'dan vergi raporu, Bağdat'tan ulak haberi ve sefer meselesi gündemde.",
-        action: { type:"goto", locId:"topkapi", agentId:"rustem" }
-      });
-    }
-    if (day >= 2 && timeIdx === 1) {
-      notes.push({
-        id: key+"-fet",
-        from: "ebussuud",
-        title: "Şeyhülislam'dan Arz",
-        body: "Devletlü Sultanım, Safevi seferi mevzusunda fetva hazırlanması arz olunmuştur. Görüşmek üzere müsaade istirham ederim.",
-        action: { type:"goto", locId:"topkapi", agentId:"ebussuud" }
-      });
-    }
-    if (timeIdx === 2) {
-      notes.push({
-        id: key+"-sin",
-        from: "sinan",
-        title: "Süleymaniye'den Rapor",
-        body: "Hünkârım, Süleymaniye inşaatından arzım var. Kubbe kemerleri hakkında istişareniz istirham olunur.",
-        action: { type:"goto", locId:"mosque", agentId:"sinan" }
-      });
-    }
+    if (timeIdx === 0) notes.push({ id:key+"-div", from:"rustem", title:"Divan Toplandı", body:"Sultanım, Divan-ı Hümayun toplandı. Vezirler, defterdar ve kazaskerlerle birlikte arz beklenmektedir.", action:{ type:"divan", locId:"topkapi", agents:["rustem","ebussuud"] } });
+    if (day >= 2 && timeIdx === 1) notes.push({ id:key+"-fet", from:"ebussuud", title:"Şeyhülislam'dan Arz", body:"Devletlü Sultanım, sefer mevzusunda fetva hazırlanması arz olunmuştur.", action:{ type:"goto", locId:"topkapi", agentId:"ebussuud" } });
+    if (timeIdx === 2) notes.push({ id:key+"-sin", from:"sinan", title:"Süleymaniye'den Rapor", body:"Hünkârım, Süleymaniye inşaatından arzım var.", action:{ type:"goto", locId:"mosque", agentId:"sinan" } });
   }
-
-  // Sadrazam için
   if (role === "rustem") {
-    if (timeIdx === 0) {
-      notes.push({
-        id: key+"-divr",
-        from: "suleiman",
-        title: "Padişah Divan'a Çağırıyor",
-        body: "Sadrazamım, Divan'da arz beklenmektedir. Hazine raporları ve sefer lojistiği görüşülecek.",
-        action: { type:"goto", locId:"topkapi", agentId:"suleiman" }
-      });
-    }
-    if (day >= 2 && timeIdx === 1) {
-      notes.push({
-        id: key+"-yus",
-        from: "yusuf",
-        title: "Çarşıdan Şikâyet",
-        body: "Paşam, sarrafın dükkanına hırsız girdi, çarşıda huzursuzluk var. Kethüdamızın müdahalesi için emrinizi bekliyoruz.",
-        action: { type:"goto", locId:"bazaar", agentId:"yusuf" }
-      });
-    }
+    if (timeIdx === 0) notes.push({ id:key+"-divr", from:"suleiman", title:"Padişah Divan'a Çağırıyor", body:"Sadrazamım, Divan'da arz beklenmektedir.", action:{ type:"goto", locId:"topkapi", agentId:"suleiman" } });
+    if (day >= 2 && timeIdx === 1) notes.push({ id:key+"-yus", from:"yusuf", title:"Çarşıdan Şikâyet", body:"Paşam, sarrafın dükkanına hırsız girdi, çarşıda huzursuzluk var.", action:{ type:"goto", locId:"bazaar", agentId:"yusuf" } });
   }
-
-  // Hürrem için
   if (role === "hurrem") {
-    if (timeIdx === 1) {
-      notes.push({
-        id: key+"-est",
-        from: "ester",
-        title: "Ester Kira Geldi",
-        body: "Haseki Sultanım, Ester sizi görmek istiyor. Polonya'dan getirdiği kumaşlar ve mektuplar var.",
-        action: { type:"goto", locId:"bazaar", agentId:"ester" }
-      });
-    }
-    if (day >= 2 && timeIdx === 2) {
-      notes.push({
-        id: key+"-mih",
-        from: "mihrimah",
-        title: "Mihrimah'tan Mektup",
-        body: "Anne, Üsküdar inşaatından bahsetmek istiyorum. Vakit bulup gelir misin?",
-        action: { type:"goto", locId:"uskudar", agentId:"mihrimah" }
-      });
-    }
+    if (timeIdx === 1) notes.push({ id:key+"-est", from:"ester", title:"Ester Kira Geldi", body:"Haseki Sultanım, Ester sizi görmek istiyor. Polonya'dan getirdiği kumaşlar ve mektuplar var.", action:{ type:"goto", locId:"bazaar", agentId:"ester" } });
+    if (day >= 2 && timeIdx === 2) notes.push({ id:key+"-mih", from:"mihrimah", title:"Mihrimah'tan Mektup", body:"Anne, Üsküdar inşaatından bahsetmek istiyorum.", action:{ type:"goto", locId:"uskudar", agentId:"mihrimah" } });
   }
-
-  // Sinan için
   if (role === "sinan") {
-    if (timeIdx === 1) {
-      notes.push({
-        id: key+"-pad",
-        from: "suleiman",
-        title: "Padişah'tan İrade",
-        body: "Üstad, Süleymaniye'nin son durumunu arz etmenizi rica ederim. Vaktiniz olursa Topkapı'ya buyurun.",
-        action: { type:"goto", locId:"topkapi", agentId:"suleiman" }
-      });
-    }
+    if (timeIdx === 1) notes.push({ id:key+"-pad", from:"suleiman", title:"Padişah'tan İrade", body:"Üstad, Süleymaniye'nin son durumunu arz etmenizi rica ederim.", action:{ type:"goto", locId:"topkapi", agentId:"suleiman" } });
   }
-
-  // Mihrimah için
   if (role === "mihrimah") {
-    if (timeIdx === 0) {
-      notes.push({
-        id: key+"-rus",
-        from: "rustem",
-        title: "Eşinden Haber",
-        body: "Sultanım, akşam evde sizi bekleyeceğim. Üsküdar'daki vakıf işlerini konuşalım.",
-        action: { type:"goto", locId:"topkapi", agentId:"rustem" }
-      });
-    }
+    if (timeIdx === 0) notes.push({ id:key+"-rus", from:"rustem", title:"Eşinden Haber", body:"Sultanım, akşam evde sizi bekleyeceğim.", action:{ type:"goto", locId:"topkapi", agentId:"rustem" } });
   }
-
-  // Şehzade Mustafa için
   if (role === "mustafa") {
-    if (timeIdx === 1) {
-      notes.push({
-        id: key+"-meh",
-        from: "mehmed",
-        title: "Yeniçeri Bağlılığı",
-        body: "Şehzadem, Yeniçeri Ocağı'ndan size selâm vardır. Asker sizi sevmekte, hayır dualarını eksik etmemektedir.",
-        action: { type:"goto", locId:"barracks", agentId:"mehmed" }
-      });
-    }
+    if (timeIdx === 1) notes.push({ id:key+"-meh", from:"mehmed", title:"Yeniçeri Bağlılığı", body:"Şehzadem, Yeniçeri Ocağı'ndan size selâm vardır.", action:{ type:"goto", locId:"barracks", agentId:"mehmed" } });
   }
-
   return notes;
 }
 
-// ── TIMELINE (events) ────────────────────────────────────────────────────────
-const TIMELINE = [
-  { day:1, t:0, text:"Sabah ezanıyla Topkapı'nın Bâb-ı Hümayûn kapıları açıldı; Divan-ı Hümayun toplandı.", agents:["all"] },
-  { day:1, t:1, text:"Mısır hazinesinden gelen 80 develik kervan Üsküdar'a vardı; baharat ve kumaş yüklü.", agents:["yusuf","marco","rustem","mihrimah"] },
-  { day:1, t:1, text:"Süleymaniye'de bir taş ustası iskeleden düşüp sakatlandı; Sinan duvarcılarla görüşmeye gitti.", agents:["sinan","suleiman"] },
-  { day:1, t:2, text:"Venedik Balyosu Galata'da Frenk tüccarlarıyla buluştu; kapitülasyon görüşmeleri başladı.", agents:["marco","rustem","yusuf","selman"] },
-  { day:1, t:2, text:"Hürrem Sultan ulema heyetini imarethanesine kabul etti; vakıf işleri görüşüldü.", agents:["hurrem","ibrahim","suleiman","ebussuud"] },
-  { day:1, t:3, text:"Mevlevi Tekkesi'nde sema dönüyor; ney sesi gece yarısına dek devam ediyor.", agents:["ibrahim","all"] },
-  { day:1, t:3, text:"Eyüp Sultan'da kandil yakıldı; Zübeyde Bacı dervişe öğrencilerine zikir çekti.", agents:["zubeyde","ibrahim"] },
-
-  { day:2, t:0, text:"Bağdat'tan ulak geldi: Safevi süvarileri sınır boyunda görüldü; saraydan tedirginlik haberi sızdı.", agents:["suleiman","rustem","mehmed","marco","ebussuud","mustafa"] },
-  { day:2, t:0, text:"Yeniçeri Ocağı'nda sabah yoklaması yapıldı; 12.000 nefer hazır halde bekliyor.", agents:["mehmed","suleiman","rustem"] },
-  { day:2, t:1, text:"Padişah Divan'da İran meselesini görüştü; şeyhülislamdan fetva hazırlanması istendi.", agents:["suleiman","rustem","ibrahim","ebussuud"] },
-  { day:2, t:1, text:"Kapalıçarşı'da bir sarrafın dükkanına gece hırsız girdi; kethüda olaya el koydu, çarşıda huzursuzluk.", agents:["yusuf","rustem","hizir"] },
-  { day:2, t:2, text:"Sinan, Süleymaniye'nin yarım kubbe yük hesaplarını yeniden gözden geçiriyor; iskele kuruluyor.", agents:["sinan"] },
-  { day:2, t:2, text:"Hürrem Sultan, Polonya Kralı Sigismund'a yeni mektubunu yazdı; ulak Edirne yoluyla yola çıktı.", agents:["hurrem","marco","rustem","ester"] },
-  { day:2, t:2, text:"Ester Kira saraya yeni Avrupa kumaşları getirdi; harem heyecanlı.", agents:["hurrem","ester","mihrimah"] },
-  { day:2, t:3, text:"Saray'da Hassa ordusu için ulufe dağıtım töreni yapıldı; askerler memnun, hazine boşaldı.", agents:["mehmed","rustem","suleiman"] },
-
-  { day:3, t:0, text:"Yusuf el-Halebî'nin dükkanına Halep'ten taze karanfil ve Hint tarçını ulaştı; fiyatlar düştü.", agents:["yusuf","marco","hizir"] },
-  { day:3, t:0, text:"Süleymaniye'nin orta kubbe kemerleri kuruldu; Sinan iskelede şahsen çalışıyor.", agents:["sinan","suleiman"] },
-  { day:3, t:1, text:"Manisa'dan Şehzade Mustafa'nın ulağı geldi; halkın selâmını ve sancakta huzurun haberini getirdi.", agents:["mustafa","suleiman","hurrem","rustem"] },
-  { day:3, t:1, text:"Padişah Hürrem Sultan'la harem bahçesinde yalnız vakit geçirdi; gece bir gazel okudu.", agents:["suleiman","hurrem"] },
-  { day:3, t:1, text:"Venedik'ten Balyos'a yeni talimat geldi: Rusya'nın Karadeniz'deki hareketleri raporlanmalı.", agents:["marco","selman"] },
-  { day:3, t:2, text:"Mevlevi Tekkesi'ne Hindistan'dan misafir derviş geldi; akşam tasavvuf üzerine sohbet edilecek.", agents:["ibrahim","zubeyde"] },
-  { day:3, t:2, text:"Yeniçeri Ağası, sefer için lojistik hazırlıkları başlattı; arpa ve un depoları açıldı.", agents:["mehmed","rustem"] },
-  { day:3, t:3, text:"Saray bahçelerinde Hassa müzisyenleri Padişah için tanbur ve ney çaldı; mehtap güzel.", agents:["suleiman","hurrem","ibrahim"] },
-
-  { day:4, t:0, text:"Beyrut'tan İskenderiye'ye giden Osmanlı kadırgası Kıbrıs açıklarında korsan saldırısına uğradı; kayıp var.", agents:["marco","suleiman","mehmed","rustem","selman"] },
-  { day:4, t:0, text:"Selman Reis donanmayı denetlemek üzere Galata'ya indi; Akdeniz seferi konuşuluyor.", agents:["selman","marco"] },
-  { day:4, t:1, text:"Divan, İran üzerine sefer kararı verdi; serdar olarak Sadrazam Rüstem Paşa görevlendirildi.", agents:["suleiman","rustem","mehmed","marco","ebussuud","mustafa"] },
-  { day:4, t:1, text:"Kapalıçarşı'da baharat fiyatları yeniden %15 sıçradı; Hint biberi kıt geliyor.", agents:["yusuf","marco","rustem","hizir"] },
-  { day:4, t:2, text:"Sinan, gizlice Edirne için yeni bir cami eskizi yapmaya başladı; kimse henüz bilmiyor.", agents:["sinan"] },
-  { day:4, t:2, text:"Mihrimah Sultan Üsküdar inşaatını gezdi; Sinan'a mihrap meselesinde bir öneri ulaştırdı.", agents:["mihrimah","sinan"] },
-  { day:4, t:3, text:"Hürrem Sultan, ramazana hazırlık olarak sadaka tertibatı emretti; binlerce ekmek pişirilecek.", agents:["hurrem","ibrahim","zubeyde"] },
-
-  { day:5, t:0, text:"Yeniçeri Ocağı Belgrad-Edirne hattından Bağdat'a yürümek üzere hazırlanıyor; davullar sokakta.", agents:["mehmed","suleiman","all"] },
-  { day:5, t:1, text:"Padişah Süleymaniye inşaatını ziyaret etti; Sinan'la kubbe-mihrap düzeni üzerine uzun sohbet etti.", agents:["sinan","suleiman"] },
-  { day:5, t:1, text:"Galata'da Cenevizli ve Venedikli tüccarlar arasında gümrük yetkisi tartışması büyüdü; Balyos arabuluyor.", agents:["marco","yusuf","rustem","selman"] },
-  { day:5, t:2, text:"Şehzade Selim Manisa'dan haber yolladı: oğlu Murad sağ salim doğdu, hanedan büyüyor.", agents:["suleiman","hurrem","mustafa"] },
-  { day:5, t:3, text:"Mevlevi Tekkesi'nde yıllık Şeb-i Aruz hazırlıkları başladı; her diyardan dervişler geliyor.", agents:["ibrahim","zubeyde"] },
-];
-
-// ── SUGGESTIONS PER AGENT ────────────────────────────────────────────────────
-const AGENT_SUGGESTIONS = {
-  suleiman: ["Bugün Divan'da ne konuşuldu?", "Muhibbi mahlasıyla şiirleriniz", "Şehzade meselesi"],
-  hurrem:   ["Bugün ne ile uğraştınız?", "Polonya'ya yazdığınız mektup", "Mustafa konusunda ne düşünüyorsunuz?"],
-  rustem:   ["Hazinenin durumu nedir?", "Sefer hazırlıkları nasıl?", "Mihrimah Sultan ile evliliğiniz"],
-  sinan:    ["Süleymaniye'de bugün ne yapıldı?", "Hagia Sophia size ne anlatıyor?", "Camide ışığın rolü"],
-  yusuf:    ["Bugün çarşıda fiyatlar nasıl?", "Yeni gelen kervan", "Kahve bu şehirde"],
-  marco:    ["Osmanlı gücünü nasıl görüyorsunuz?", "Venedik'e ne bildiriyorsunuz?", "Kapitülasyon görüşmeleri"],
-  mehmed:   ["Sefer hazırlığı nasıl?", "Viyana kuşatması", "Devşirme olarak büyümek"],
-  ibrahim:  ["Sema ne anlama geliyor?", "Rumi'nin en derin fikri", "Aşk ile Allah arasındaki ilişki"],
-  ebussuud: ["Sefer için fetva", "Kanunî ile birlikte hukuk reformu", "Şer'i ve örfi hukukun uyumu"],
-  mihrimah: ["Üsküdar Camii hakkında", "Anne-baba arasında olmak", "Sinan ile çalışmak"],
-  mustafa:  ["Manisa'da hayat nasıl?", "Asker sizi nasıl görüyor?", "Babanızla ilişkiniz"],
-  ester:    ["Saray dedikodusu", "Hangi malları getirdiniz?", "Hürrem Sultan ile ilişkiniz"],
-  selman:   ["Akdeniz'de korsanlar", "Barbaros'tan hatıralar", "Donanmanın durumu"],
-  hizir:    ["Çarşıda en çok ne satılıyor?", "Hangi tüccar zengin?", "Çarşı dedikoduları"],
-  zubeyde:  ["Eyüp Sultan'ın bereketi", "Şifa için ne yaparsınız?", "Halvetî yolu nedir?"],
-};
-
-// ── API KEY SCREEN ────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// ── SCREEN: API KEY ───────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 function ApiKeyScreen({ onSubmit }) {
   const [key, setKey] = useState("");
   const [model, setModel] = useState("claude-sonnet-4-5-20250929");
   const [showKey, setShowKey] = useState(false);
-
   return (
     <div style={{minHeight:"100vh",background:`radial-gradient(ellipse at 50% 30%,rgba(139,26,26,.25) 0%,${DARK} 65%)`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"2rem",fontFamily:"'EB Garamond',Georgia,serif",textAlign:"center"}}>
       <style>{`
@@ -737,58 +1091,45 @@ function ApiKeyScreen({ onSubmit }) {
         .key-btn{transition:all .2s;}
         .link:hover{color:${GOLD}!important;text-decoration:underline;}
       `}</style>
-
       <div className="fade-1" style={{fontSize:"2.5rem",marginBottom:".8rem"}}>🗝️</div>
       <h1 className="fade-1" style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"clamp(1.3rem,4vw,1.9rem)",color:GOLD,letterSpacing:".06em",marginBottom:".5rem"}}>
         Şehre Girmeden Önce
       </h1>
       <p className="fade-2" style={{color:"rgba(240,224,192,.55)",fontSize:".88rem",fontStyle:"italic",marginBottom:"1.5rem",maxWidth:480,lineHeight:1.7}}>
-        Bu simülasyon her karakteri Anthropic Claude ile canlandırır. Anahtarınız yalnızca bu tarayıcı sekmesinde kalır, hiçbir yere gönderilmez.
+        Bu simülasyon her karakteri Anthropic Claude ile canlandırır. Anahtarınız yalnızca bu tarayıcı sekmesinde kalır.
       </p>
-
       <div className="fade-3" style={{width:"100%",maxWidth:440,marginBottom:"1rem",background:"rgba(255,255,255,.03)",border:`1px solid rgba(201,168,76,.18)`,borderRadius:8,padding:"1.1rem 1.2rem",textAlign:"left"}}>
         <p style={{color:GOLD,fontSize:".68rem",letterSpacing:".15em",marginBottom:".55rem"}}>ANTHROPIC API ANAHTARI</p>
         <div style={{display:"flex",gap:".4rem",alignItems:"center"}}>
-          <input
-            value={key}
-            onChange={e=>setKey(e.target.value)}
-            type={showKey ? "text" : "password"}
-            placeholder="sk-ant-..."
-            onKeyDown={e=>e.key==="Enter"&&key.trim()&&onSubmit({apiKey:key.trim(),model})}
-            style={{flex:1,padding:".62rem .8rem",background:"rgba(0,0,0,.35)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:4,color:IVORY,fontSize:".88rem",outline:"none",fontFamily:"monospace",letterSpacing:".02em"}}
-          />
+          <input value={key} onChange={e=>setKey(e.target.value)} type={showKey ? "text" : "password"} placeholder="sk-ant-..." onKeyDown={e=>e.key==="Enter"&&key.trim()&&onSubmit({apiKey:key.trim(),model})} style={{flex:1,padding:".62rem .8rem",background:"rgba(0,0,0,.35)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:4,color:IVORY,fontSize:".88rem",outline:"none",fontFamily:"monospace",letterSpacing:".02em"}}/>
           <button onClick={()=>setShowKey(s=>!s)} style={{padding:".55rem .7rem",background:"rgba(201,168,76,.08)",border:`1px solid rgba(201,168,76,.2)`,borderRadius:4,color:"rgba(240,224,192,.55)",fontSize:".75rem",cursor:"pointer",fontFamily:"inherit"}}>
             {showKey ? "gizle" : "göster"}
           </button>
         </div>
-
         <p style={{color:GOLD,fontSize:".68rem",letterSpacing:".15em",marginTop:".95rem",marginBottom:".5rem"}}>MODEL</p>
         <select value={model} onChange={e=>setModel(e.target.value)} style={{width:"100%",padding:".55rem .7rem",background:"rgba(0,0,0,.35)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:4,color:IVORY,fontSize:".82rem",outline:"none",fontFamily:"inherit"}}>
           <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5 (önerilen)</option>
           <option value="claude-opus-4-5-20251101">Claude Opus 4.5 (en yüksek nitelik)</option>
           <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (hızlı, ekonomik)</option>
         </select>
-
         <p style={{fontSize:".7rem",color:"rgba(240,224,192,.4)",marginTop:".95rem",lineHeight:1.7}}>
           Anahtarınız yok mu? <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener" className="link" style={{color:"rgba(201,168,76,.75)",textDecoration:"none"}}>console.anthropic.com</a> üzerinden alabilirsiniz.
         </p>
       </div>
-
-      <button className="key-btn fade-4" disabled={!key.trim()} onClick={()=>onSubmit({apiKey:key.trim(),model})}
-        style={{padding:".75rem 2.8rem",background:key.trim()?`linear-gradient(135deg,#7a1515 0%,#c9a84c 100%)`:"rgba(201,168,76,.18)",border:"none",borderRadius:4,color:DARK,fontFamily:"'Cinzel Decorative',serif",fontWeight:700,fontSize:".85rem",cursor:key.trim()?"pointer":"not-allowed",letterSpacing:".08em",boxShadow:`0 4px 24px rgba(201,168,76,.25)`}}>
+      <button className="key-btn fade-4" disabled={!key.trim()} onClick={()=>onSubmit({apiKey:key.trim(),model})} style={{padding:".75rem 2.8rem",background:key.trim()?`linear-gradient(135deg,#7a1515 0%,#c9a84c 100%)`:"rgba(201,168,76,.18)",border:"none",borderRadius:4,color:DARK,fontFamily:"'Cinzel Decorative',serif",fontWeight:700,fontSize:".85rem",cursor:key.trim()?"pointer":"not-allowed",letterSpacing:".08em",boxShadow:`0 4px 24px rgba(201,168,76,.25)`}}>
         Devam
       </button>
     </div>
   );
 }
 
-// ── ROLE SELECTION SCREEN ────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// ── SCREEN: ROLE SELECTION ────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 function RoleScreen({ onSelect }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState("yolcu");
-
   const roles = Object.values(ROLES);
-
   return (
     <div style={{minHeight:"100vh",background:`radial-gradient(ellipse at 50% 30%,rgba(139,26,26,.28) 0%,${DARK} 65%)`,padding:"2rem 1rem",fontFamily:"'EB Garamond',Georgia,serif",color:IVORY}}>
       <style>{`
@@ -800,27 +1141,22 @@ function RoleScreen({ onSelect }) {
         .enter-btn{transition:all .2s;}
         .enter-btn:hover:not(:disabled){opacity:.9;transform:translateY(-1px);box-shadow:0 8px 30px rgba(201,168,76,.4);}
       `}</style>
-
       <div style={{maxWidth:880,margin:"0 auto"}}>
         <div className="fade-in" style={{textAlign:"center",marginBottom:"2rem"}}>
           <div style={{fontSize:"2.6rem",marginBottom:".4rem"}}>☽</div>
           <h1 style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"clamp(1.3rem,4vw,2rem)",color:GOLD,letterSpacing:".06em",marginBottom:".3rem"}}>İstanbul, 1550</h1>
           <p style={{color:"rgba(240,224,192,.55)",fontSize:".88rem",fontStyle:"italic"}}>Bir rol seçin, ya da yolcu olarak gezin.</p>
         </div>
-
         <div className="fade-in" style={{maxWidth:380,margin:"0 auto 1.5rem auto"}}>
           <p style={{color:GOLD,fontSize:".7rem",letterSpacing:".15em",marginBottom:".5rem",textAlign:"center"}}>ADINIZ (İSTERSENİZ)</p>
-          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Hasan, Ahmet, Ayşe..."
-            style={{width:"100%",padding:".7rem 1rem",background:"rgba(201,168,76,.07)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:4,color:IVORY,fontSize:"1rem",outline:"none",fontFamily:"inherit"}}/>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Hasan, Ahmet, Ayşe..." style={{width:"100%",padding:".7rem 1rem",background:"rgba(201,168,76,.07)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:4,color:IVORY,fontSize:"1rem",outline:"none",fontFamily:"inherit"}}/>
         </div>
-
         <div className="fade-in" style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(240px, 1fr))",gap:"1rem",marginBottom:"2rem"}}>
           {roles.map(r => {
             const isSelected = selected === r.id;
             const rgbVal = rgb(r.accent);
             return (
-              <div key={r.id} className="role-card" onClick={()=>setSelected(r.id)}
-                style={{background:isSelected?`rgba(${rgbVal},.15)`:"rgba(255,255,255,.03)",border:`1px solid rgba(${rgbVal},${isSelected?.6:.2})`,borderRadius:8,padding:"1rem",boxShadow:isSelected?`0 4px 24px rgba(${rgbVal},.2)`:"none"}}>
+              <div key={r.id} className="role-card" onClick={()=>setSelected(r.id)} style={{background:isSelected?`rgba(${rgbVal},.15)`:"rgba(255,255,255,.03)",border:`1px solid rgba(${rgbVal},${isSelected?.6:.2})`,borderRadius:8,padding:"1rem",boxShadow:isSelected?`0 4px 24px rgba(${rgbVal},.2)`:"none"}}>
                 <div style={{display:"flex",alignItems:"center",gap:".6rem",marginBottom:".5rem"}}>
                   <span style={{fontSize:"1.6rem"}}>{r.emoji}</span>
                   <div>
@@ -833,10 +1169,8 @@ function RoleScreen({ onSelect }) {
             );
           })}
         </div>
-
         <div style={{textAlign:"center"}}>
-          <button className="enter-btn" onClick={()=>onSelect({playerName:name.trim()||"Yolcu",playerRole:selected})}
-            style={{padding:".8rem 3rem",background:`linear-gradient(135deg,#7a1515 0%,#c9a84c 100%)`,border:"none",borderRadius:4,color:DARK,fontFamily:"'Cinzel Decorative',serif",fontWeight:700,fontSize:".9rem",cursor:"pointer",letterSpacing:".08em",boxShadow:`0 4px 24px rgba(201,168,76,.28)`}}>
+          <button className="enter-btn" onClick={()=>onSelect({playerName:name.trim()||"Yolcu",playerRole:selected})} style={{padding:".8rem 3rem",background:`linear-gradient(135deg,#7a1515 0%,#c9a84c 100%)`,border:"none",borderRadius:4,color:DARK,fontFamily:"'Cinzel Decorative',serif",fontWeight:700,fontSize:".9rem",cursor:"pointer",letterSpacing:".08em",boxShadow:`0 4px 24px rgba(201,168,76,.28)`}}>
             Şehre Gir
           </button>
         </div>
@@ -845,10 +1179,11 @@ function RoleScreen({ onSelect }) {
   );
 }
 
-// ── MAILBOX PANEL ─────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// ── PANEL: MAILBOX ────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 function MailboxPanel({ open, onClose, mailbox, onOpenAction, onMarkRead }) {
   if (!open) return null;
-
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.78)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
       <div onClick={e=>e.stopPropagation()} style={{maxWidth:520,width:"100%",maxHeight:"86vh",background:`linear-gradient(160deg,#15151f 0%,${DARK} 100%)`,border:`1px solid rgba(201,168,76,.3)`,borderRadius:8,boxShadow:`0 20px 60px rgba(0,0,0,.6)`,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -861,21 +1196,22 @@ function MailboxPanel({ open, onClose, mailbox, onOpenAction, onMarkRead }) {
             <p style={{color:"rgba(240,224,192,.4)",fontStyle:"italic",textAlign:"center",padding:"2rem 0"}}>Henüz mektup yok.</p>
           ) : (
             mailbox.slice().reverse().map(m => {
-              const from = AGENT_META[m.from];
+              const from = AGENT_META[m.from] || { name:"Saray", emoji:"📜", accent:GOLD };
               const rgbVal = rgb(from?.accent || GOLD);
+              const isScenario = m.action?.type === "scenario";
+              const isDivan = m.action?.type === "divan";
               return (
-                <div key={m.id} onClick={()=>{onOpenAction(m); onMarkRead(m.id);}}
-                  style={{padding:".9rem 1rem",marginBottom:".7rem",background:m.read?"rgba(255,255,255,.02)":`rgba(${rgbVal},.08)`,border:`1px solid rgba(${rgbVal},${m.read?.18:.4})`,borderRadius:6,cursor:"pointer",transition:"all .15s"}}>
+                <div key={m.id} onClick={()=>{onOpenAction(m); onMarkRead(m.id);}} style={{padding:".9rem 1rem",marginBottom:".7rem",background:m.read?"rgba(255,255,255,.02)":`rgba(${rgbVal},.08)`,border:`1px solid rgba(${rgbVal},${m.read?.18:.4})`,borderRadius:6,cursor:"pointer",transition:"all .15s"}}>
                   <div style={{display:"flex",alignItems:"center",gap:".5rem",marginBottom:".4rem"}}>
                     <span style={{fontSize:"1rem"}}>{from?.emoji}</span>
                     <span style={{color:from?.accent,fontSize:".82rem",fontWeight:600}}>{from?.name}</span>
+                    {isScenario && <span style={{fontSize:".62rem",color:CRIMSON,background:`rgba(${rgb(CRIMSON)},.18)`,padding:".15rem .45rem",borderRadius:3,letterSpacing:".05em"}}>OLAY</span>}
+                    {isDivan && <span style={{fontSize:".62rem",color:GOLD,background:`rgba(${rgb(GOLD)},.18)`,padding:".15rem .45rem",borderRadius:3,letterSpacing:".05em"}}>DİVAN</span>}
                     {!m.read && <span style={{width:7,height:7,borderRadius:"50%",background:from?.accent,marginLeft:"auto"}}/>}
                   </div>
                   <div style={{fontSize:".88rem",color:IVORY,marginBottom:".3rem",fontWeight:600}}>{m.title}</div>
                   <div style={{fontSize:".82rem",color:"rgba(240,224,192,.65)",lineHeight:1.6}}>{m.body}</div>
-                  {m.action && (
-                    <div style={{marginTop:".55rem",fontSize:".72rem",color:from?.accent,fontStyle:"italic"}}>→ Tıklayın, yanıt verin</div>
-                  )}
+                  {m.action && <div style={{marginTop:".55rem",fontSize:".72rem",color:from?.accent,fontStyle:"italic"}}>→ Tıklayın, yanıt verin</div>}
                 </div>
               );
             })
@@ -886,8 +1222,10 @@ function MailboxPanel({ open, onClose, mailbox, onOpenAction, onMarkRead }) {
   );
 }
 
-// ── CHRONICLE PANEL ───────────────────────────────────────────────────────────
-function ChroniclePanel({ open, onClose, day, timeIdx, chronicle, activityLog }) {
+// ──────────────────────────────────────────────────────────────────────────────
+// ── PANEL: CHRONICLE ──────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+function ChroniclePanel({ open, onClose, day, timeIdx, chronicle }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.78)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
@@ -895,7 +1233,7 @@ function ChroniclePanel({ open, onClose, day, timeIdx, chronicle, activityLog })
         <div style={{padding:"1rem 1.25rem",borderBottom:`1px solid rgba(201,168,76,.15)`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
             <div style={{fontFamily:"'Cinzel Decorative',serif",color:GOLD,fontSize:"1rem"}}>📜 Vekâyiname</div>
-            <div style={{fontSize:".7rem",color:"rgba(240,224,192,.5)",fontStyle:"italic",marginTop:".15rem"}}>Gün {day} · {TIME_LABELS[timeIdx]} {TIME_ICONS[timeIdx]}</div>
+            <div style={{fontSize:".7rem",color:"rgba(240,224,192,.5)",fontStyle:"italic",marginTop:".15rem"}}>Gün {day} ({gameDateTr(day)}) · {TIME_LABELS[timeIdx]} {TIME_ICONS[timeIdx]}</div>
           </div>
           <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(201,168,76,.25)",color:"rgba(240,224,192,.6)",borderRadius:4,padding:".3rem .7rem",cursor:"pointer",fontSize:".82rem",fontFamily:"inherit"}}>kapat</button>
         </div>
@@ -903,37 +1241,379 @@ function ChroniclePanel({ open, onClose, day, timeIdx, chronicle, activityLog })
           <div style={{fontSize:".62rem",color:"rgba(201,168,76,.55)",letterSpacing:".18em",textTransform:"uppercase",marginBottom:".8rem"}}>Şehirde olanlar</div>
           {chronicle.length === 0 ? (
             <p style={{color:"rgba(240,224,192,.4)",fontStyle:"italic"}}>Gün yeni başladı.</p>
-          ) : (
-            chronicle.slice(0, 30).map((e, i) => (
-              <div key={i} style={{padding:".7rem .9rem",marginBottom:".5rem",background:"rgba(201,168,76,.04)",border:"1px solid rgba(201,168,76,.13)",borderRadius:6}}>
-                <div style={{fontSize:".6rem",color:GOLD,marginBottom:".25rem",opacity:.7}}>GÜN {e.day} · {TIME_LABELS[e.t].toUpperCase()} {TIME_ICONS[e.t]}</div>
-                <div style={{fontSize:".86rem",color:IVORY,lineHeight:1.65,opacity:.88}}>{e.text}</div>
-              </div>
-            ))
-          )}
+          ) : chronicle.slice(0, 30).map((e, i) => (
+            <div key={i} style={{padding:".7rem .9rem",marginBottom:".5rem",background:"rgba(201,168,76,.04)",border:"1px solid rgba(201,168,76,.13)",borderRadius:6}}>
+              <div style={{fontSize:".6rem",color:GOLD,marginBottom:".25rem",opacity:.7}}>GÜN {e.day} · {TIME_LABELS[e.t].toUpperCase()} {TIME_ICONS[e.t]}</div>
+              <div style={{fontSize:".86rem",color:IVORY,lineHeight:1.65,opacity:.88}}>{e.text}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// ── PANEL: İLİŞKİ MATRİSİ ────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+function MatrisPanel({ open, onClose, matrix, ahval, silinmis, day }) {
+  if (!open) return null;
+  const aktifKarakterler = Object.keys(AGENT_META).filter(k => !silinmis.includes(k));
+  function dot(val) {
+    if (val >= 2) return <span style={{color:"#27ae60"}}>●●●</span>;
+    if (val >= 1) return <span style={{color:"#27ae60"}}>●●</span>;
+    if (val === 0) return <span style={{color:"rgba(240,224,192,.4)"}}>●</span>;
+    if (val === -1) return <span style={{color:"#c0392b"}}>●●</span>;
+    return <span style={{color:"#c0392b"}}>●●●</span>;
+  }
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:760,width:"100%",maxHeight:"90vh",background:`linear-gradient(160deg,#15151f 0%,${DARK} 100%)`,border:`1px solid rgba(201,168,76,.3)`,borderRadius:8,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{padding:"1rem 1.25rem",borderBottom:`1px solid rgba(201,168,76,.15)`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontFamily:"'Cinzel Decorative',serif",color:GOLD,fontSize:"1rem"}}>🕸️ Saray Münasebetleri</div>
+            <div style={{fontSize:".7rem",color:"rgba(240,224,192,.5)",fontStyle:"italic",marginTop:".15rem"}}>{gameDateTr(day)}</div>
+          </div>
+          <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(201,168,76,.25)",color:"rgba(240,224,192,.6)",borderRadius:4,padding:".3rem .7rem",cursor:"pointer",fontSize:".82rem",fontFamily:"inherit"}}>kapat</button>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"1rem 1.25rem"}}>
+          <div style={{fontSize:".68rem",color:"rgba(201,168,76,.6)",letterSpacing:".15em",textTransform:"uppercase",marginBottom:".75rem"}}>Sizi (kullanıcı) nasıl görüyorlar?</div>
+          {aktifKarakterler.map(k => {
+            const userView = (matrix.user || {})[k];
+            if (!userView || (userView.guven === 0 && userView.saygi === 0 && userView.suphe === 0)) return null;
+            const meta = AGENT_META[k];
+            return (
+              <div key={"u-"+k} style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:".5rem",padding:".55rem .75rem",marginBottom:".35rem",background:`rgba(${rgb(meta.accent)},.06)`,border:`1px solid rgba(${rgb(meta.accent)},.18)`,borderRadius:4,fontSize:".8rem",alignItems:"center"}}>
+                <span style={{color:meta.accent}}>{meta.emoji} {meta.name}</span>
+                <span title={"güven: "+userView.guven}>güven {dot(userView.guven)}</span>
+                <span title={"saygı: "+userView.saygi}>saygı {dot(userView.saygi)}</span>
+                <span title={"şüphe: "+userView.suphe}>şüphe {dot(userView.suphe)}</span>
+              </div>
+            );
+          })}
+          <div style={{fontSize:".68rem",color:"rgba(201,168,76,.6)",letterSpacing:".15em",textTransform:"uppercase",margin:"1.4rem 0 .75rem 0"}}>Karakterler arası</div>
+          {aktifKarakterler.map(k => {
+            const myView = matrix[k];
+            if (!myView) return null;
+            const targets = Object.entries(myView).filter(([t]) => aktifKarakterler.includes(t));
+            if (targets.length === 0) return null;
+            const meta = AGENT_META[k];
+            return (
+              <div key={"r-"+k} style={{marginBottom:".9rem"}}>
+                <div style={{fontSize:".78rem",color:meta.accent,marginBottom:".35rem",fontWeight:600}}>{meta.emoji} {meta.name} → </div>
+                {targets.map(([t, r]) => {
+                  const tMeta = AGENT_META[t];
+                  return (
+                    <div key={k+t} style={{display:"grid",gridTemplateColumns:"1fr auto auto auto",gap:".5rem",padding:".4rem .75rem",marginBottom:".25rem",background:"rgba(255,255,255,.02)",borderRadius:4,fontSize:".78rem",alignItems:"center"}}>
+                      <span style={{color:"rgba(240,224,192,.7)",paddingLeft:"1rem"}}>↳ {tMeta?.name || t}</span>
+                      <span>güven {dot(r.guven)}</span>
+                      <span>saygı {dot(r.saygi)}</span>
+                      <span>şüphe {dot(r.suphe)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          <div style={{fontSize:".68rem",color:"rgba(201,168,76,.6)",letterSpacing:".15em",textTransform:"uppercase",margin:"1.4rem 0 .75rem 0"}}>Ahval kartları</div>
+          {aktifKarakterler.map(k => {
+            const kart = ahval[k];
+            if (!kart) return null;
+            const meta = AGENT_META[k];
+            const aktifEg = Object.entries(kart.egilimler || {}).filter(([_,v])=>v>0);
+            return (
+              <div key={"a-"+k} style={{padding:".5rem .75rem",marginBottom:".3rem",background:`rgba(${rgb(meta.accent)},.04)`,borderLeft:`2px solid rgba(${rgb(meta.accent)},.4)`,fontSize:".76rem",color:"rgba(240,224,192,.75)"}}>
+                <span style={{color:meta.accent,fontWeight:600}}>{meta.emoji} {meta.name}</span>
+                <span style={{color:"rgba(240,224,192,.5)"}}> · {kart.yas} yaş · {kart.saglik}</span>
+                {aktifEg.length > 0 && (
+                  <div style={{marginTop:".2rem",fontStyle:"italic",fontSize:".72rem",opacity:.85}}>
+                    {aktifEg.map(([n,v])=>n+" "+v).join(" · ")}
+                  </div>
+                )}
+                {(kart.yukler||[]).length > 0 && (
+                  <div style={{marginTop:".2rem",fontSize:".72rem",color:GOLD,opacity:.8}}>
+                    yük: {kart.yukler.join(", ")}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── MODAL: METİN YAPIŞTIR (kullanıcı bir kaynak/metin gösterir) ──────────────
+// ──────────────────────────────────────────────────────────────────────────────
+function MetinYapistirModal({ open, onClose, onSubmit, current }) {
+  const [val, setVal] = useState(current || "");
+  useEffect(() => { setVal(current || ""); }, [current, open]);
+  if (!open) return null;
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.8)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div onClick={e=>e.stopPropagation()} style={{maxWidth:580,width:"100%",background:`linear-gradient(160deg,#15151f 0%,${DARK} 100%)`,border:`1px solid rgba(201,168,76,.3)`,borderRadius:8,padding:"1.25rem"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:".75rem"}}>
+          <div style={{fontFamily:"'Cinzel Decorative',serif",color:GOLD,fontSize:"1rem"}}>📎 Kaynak / Metin Paylaş</div>
+          <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(201,168,76,.25)",color:"rgba(240,224,192,.6)",borderRadius:4,padding:".25rem .6rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>kapat</button>
+        </div>
+        <p style={{color:"rgba(240,224,192,.65)",fontSize:".82rem",lineHeight:1.6,marginBottom:".75rem"}}>
+          Aşağıdaki metin (makale parçası, kaynak alıntısı, kendi notunuz) karakterin yanına eklenecek. Karakter buna 1550 perspektifinden tepki verecek.
+        </p>
+        <textarea value={val} onChange={e=>setVal(e.target.value)} rows={10} placeholder="Metni buraya yapıştırın..." style={{width:"100%",padding:".7rem .85rem",background:"rgba(0,0,0,.4)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:4,color:IVORY,fontSize:".82rem",outline:"none",fontFamily:"inherit",resize:"vertical",lineHeight:1.5}}/>
+        <div style={{display:"flex",gap:".5rem",marginTop:".75rem",justifyContent:"flex-end"}}>
+          <button onClick={()=>{onSubmit(""); onClose();}} style={{padding:".5rem 1rem",background:"transparent",border:"1px solid rgba(240,224,192,.2)",borderRadius:4,color:"rgba(240,224,192,.6)",cursor:"pointer",fontSize:".82rem",fontFamily:"inherit"}}>temizle</button>
+          <button onClick={()=>{onSubmit(val.trim()); onClose();}} style={{padding:".5rem 1.2rem",background:`linear-gradient(135deg,#7a1515 0%,#c9a84c 100%)`,border:"none",borderRadius:4,color:DARK,cursor:"pointer",fontSize:".82rem",fontFamily:"'Cinzel Decorative',serif",fontWeight:700,letterSpacing:".05em"}}>ekle</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── MODAL: SENARYO SAHNESİ (BEKLENMEYEN OLAY) ────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+function SenaryoModal({ open, senaryo, onClose, onTamamla, ctx }) {
+  const [sahneHafiza, setSahneHafiza] = useState([]);
+  const [choices, setChoices] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [customInput, setCustomInput] = useState("");
+  const [turn, setTurn] = useState(0);
+  const [error, setError] = useState(null);
+  const sonuneRef = useRef(null);
+
+  useEffect(() => {
+    if (open && senaryo) {
+      const acilis = (senaryo.acilis || []).map(a => ({ speaker:a.speaker, text:a.text, isOpening:true }));
+      setSahneHafiza(acilis);
+      setChoices([]);
+      setTurn(0);
+      setError(null);
+      setCustomInput("");
+      ilkSecenekUret(acilis);
+    }
+  }, [open, senaryo?.id]);
+
+  useEffect(() => { sonuneRef.current?.scrollIntoView({ behavior:"smooth" }); }, [sahneHafiza, choices, busy]);
+
+  async function ilkSecenekUret(hafizaInit) {
+    setBusy(true);
+    try {
+      const r = await generateChoices({ senaryo, sahneHafiza: hafizaInit }, ctx);
+      setChoices(r.choices || []);
+    } catch (e) { setError(e.message || "seçenek üretilemedi"); }
+    setBusy(false);
+  }
+
+  async function yanitGonder(text, secimEtkileri, secimFlags) {
+    if (!text.trim()) return;
+    setBusy(true);
+    setError(null);
+    setChoices([]);
+    const userMsg = text.trim();
+    try {
+      const r = await multiCharacterTurn(senaryo.karakterler, sahneHafiza, userMsg, { senaryo }, ctx);
+      const yeniHafiza = [...sahneHafiza, { speaker:"user", text:userMsg }, ...r.replies];
+      setSahneHafiza(yeniHafiza);
+      const yeniTur = turn + 1;
+      setTurn(yeniTur);
+      if (yeniTur < 4) {
+        const cr = await generateChoices({ senaryo, sahneHafiza: yeniHafiza }, ctx);
+        setChoices(cr.choices || []);
+      } else {
+        setChoices([]); // sahne tamamlandı
+      }
+      // Seçim etkileri sahne bitiminde uygulanır; etkileri biriktir
+      if (secimEtkileri || secimFlags) {
+        onTamamla({ partial:true, etki: secimEtkileri || {}, flags: secimFlags || [] });
+      }
+    } catch (e) { setError(e.message || "cevap alınamadı"); }
+    setBusy(false);
+  }
+
+  function sahneyiKapat(bitiriliyor) {
+    onTamamla({ partial:false, tamamlandi:bitiriliyor });
+    onClose();
+  }
+
+  if (!open || !senaryo) return null;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:`linear-gradient(180deg, rgba(0,0,0,.92) 0%, rgba(13,13,26,.96) 100%)`,zIndex:300,display:"flex",flexDirection:"column",padding:"1rem"}}>
+      <style>{`
+        @keyframes scene-in{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+        .scene-bubble{animation:scene-in .35s ease both;}
+        .scene-choice:hover{transform:translateX(3px);background:rgba(201,168,76,.12)!important;}
+        .scene-choice{transition:all .15s;}
+      `}</style>
+      <div style={{maxWidth:780,width:"100%",margin:"0 auto",flex:1,display:"flex",flexDirection:"column",background:"rgba(21,21,31,.6)",border:`1px solid rgba(201,168,76,.25)`,borderRadius:8,overflow:"hidden"}}>
+        <div style={{padding:"1rem 1.4rem",borderBottom:`1px solid rgba(201,168,76,.2)`,background:`linear-gradient(135deg, rgba(122,21,21,.15) 0%, rgba(201,168,76,.05) 100%)`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontFamily:"'Cinzel Decorative',serif",color:GOLD,fontSize:"1.05rem",letterSpacing:".05em"}}>🎭 {senaryo.baslik}</div>
+            <div style={{fontSize:".72rem",color:"rgba(240,224,192,.55)",fontStyle:"italic",marginTop:".15rem"}}>{gameDateTr(ctx.day)} · {LOCATIONS[senaryo.konum]?.name} · Tur {turn+1}/4</div>
+          </div>
+          <button onClick={()=>sahneyiKapat(false)} style={{background:"transparent",border:"1px solid rgba(201,168,76,.3)",color:"rgba(240,224,192,.65)",borderRadius:4,padding:".35rem .8rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>sahneden çık</button>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"1.25rem 1.4rem"}}>
+          <div style={{padding:".85rem 1rem",background:"rgba(201,168,76,.05)",border:"1px solid rgba(201,168,76,.18)",borderRadius:6,marginBottom:"1.2rem",fontSize:".85rem",color:"rgba(240,224,192,.78)",lineHeight:1.7,fontStyle:"italic"}}>
+            {senaryo.metin}
+          </div>
+          {sahneHafiza.map((m, i) => {
+            const isUser = m.speaker === "user";
+            const meta = AGENT_META[m.speaker];
+            const speakerName = isUser ? (ctx.playerName || "Sen") : (meta?.name || m.speaker);
+            const accent = isUser ? GOLD : (meta?.accent || GOLD);
+            const emoji = isUser ? "🧭" : (meta?.emoji || "·");
+            return (
+              <div key={i} className="scene-bubble" style={{marginBottom:".8rem",display:"flex",flexDirection:isUser?"row-reverse":"row",gap:".6rem",alignItems:"flex-start"}}>
+                <div style={{flexShrink:0,fontSize:"1.4rem",marginTop:".15rem"}}>{emoji}</div>
+                <div style={{maxWidth:"82%",padding:".7rem .95rem",background:isUser?`rgba(${rgb(GOLD)},.08)`:`rgba(${rgb(accent)},.06)`,border:`1px solid rgba(${rgb(accent)},.22)`,borderRadius:6}}>
+                  <div style={{fontSize:".7rem",color:accent,marginBottom:".25rem",fontWeight:600,letterSpacing:".02em"}}>{speakerName}{m.isOpening && <span style={{color:"rgba(240,224,192,.4)",marginLeft:".4rem",fontStyle:"italic",fontWeight:400}}>· açılış</span>}</div>
+                  <div style={{fontSize:".88rem",color:IVORY,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                </div>
+              </div>
+            );
+          })}
+          {busy && (
+            <div style={{padding:".6rem 1rem",color:"rgba(201,168,76,.6)",fontSize:".82rem",fontStyle:"italic"}}>
+              <span className="scene-bubble">karakter cevap veriyor...</span>
+            </div>
+          )}
+          {error && (
+            <div style={{padding:".7rem 1rem",background:"rgba(192,57,43,.12)",border:"1px solid rgba(192,57,43,.3)",borderRadius:4,color:"#e74c3c",fontSize:".82rem",marginBottom:".8rem"}}>{error}</div>
+          )}
+          <div ref={sonuneRef}/>
+        </div>
+        {turn < 4 ? (
+          <div style={{borderTop:`1px solid rgba(201,168,76,.18)`,padding:"1rem 1.4rem",background:"rgba(0,0,0,.3)"}}>
+            {choices.length > 0 && !busy && (
+              <div style={{marginBottom:".75rem"}}>
+                <div style={{fontSize:".66rem",color:"rgba(201,168,76,.7)",letterSpacing:".15em",textTransform:"uppercase",marginBottom:".5rem"}}>Yanıt önerileri</div>
+                {choices.map((c, i) => (
+                  <div key={i} className="scene-choice" onClick={()=>yanitGonder(c.text, c.effects, c.flags)} style={{padding:".55rem .85rem",marginBottom:".4rem",background:"rgba(201,168,76,.04)",border:"1px solid rgba(201,168,76,.2)",borderRadius:4,cursor:"pointer",fontSize:".84rem",color:"rgba(240,224,192,.88)",lineHeight:1.5}}>
+                    <span style={{color:GOLD,fontSize:".68rem",letterSpacing:".05em",marginRight:".5rem",opacity:.85}}>[{c.ton}]</span>
+                    {c.text}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{display:"flex",gap:".4rem"}}>
+              <input value={customInput} onChange={e=>setCustomInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!busy&&customInput.trim()&&yanitGonder(customInput, {}, [])} placeholder="ya da kendi yanıtını yaz..." disabled={busy} style={{flex:1,padding:".55rem .8rem",background:"rgba(0,0,0,.4)",border:`1px solid rgba(201,168,76,.25)`,borderRadius:4,color:IVORY,fontSize:".85rem",outline:"none",fontFamily:"inherit"}}/>
+              <button onClick={()=>customInput.trim()&&!busy&&yanitGonder(customInput,{},[])} disabled={busy||!customInput.trim()} style={{padding:".5rem 1rem",background:customInput.trim()?GOLD:"rgba(201,168,76,.2)",border:"none",borderRadius:4,color:DARK,cursor:customInput.trim()?"pointer":"not-allowed",fontSize:".82rem",fontFamily:"'Cinzel Decorative',serif",fontWeight:700}}>↑</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{borderTop:`1px solid rgba(201,168,76,.18)`,padding:"1rem 1.4rem",background:"rgba(0,0,0,.3)",textAlign:"center"}}>
+            <div style={{fontSize:".82rem",color:"rgba(240,224,192,.7)",marginBottom:".7rem",fontStyle:"italic"}}>Sahne sonuna vardı. Bu olay vekayinameye geçecek.</div>
+            <button onClick={()=>sahneyiKapat(true)} style={{padding:".55rem 1.5rem",background:`linear-gradient(135deg,#7a1515 0%,#c9a84c 100%)`,border:"none",borderRadius:4,color:DARK,cursor:"pointer",fontSize:".82rem",fontFamily:"'Cinzel Decorative',serif",fontWeight:700,letterSpacing:".06em"}}>Sahneyi Kapat</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ── MODAL: DİVAN SAHNESİ (ÇOKLU KARAKTER) ────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+function DivanModal({ open, agents, onClose, ctx }) {
+  const [sahneHafiza, setSahneHafiza] = useState([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const sonuneRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setSahneHafiza([{ speaker:"narrator", text:`Divan-ı Hümâyun toplandı. ${agents.map(a=>AGENT_META[a]?.name).filter(Boolean).join(", ")} hazır bulunuyor.`, isOpening:true }]);
+      setInput(""); setError(null);
+    }
+  }, [open]);
+
+  useEffect(() => { sonuneRef.current?.scrollIntoView({ behavior:"smooth" }); }, [sahneHafiza, busy]);
+
+  async function gonder() {
+    if (!input.trim() || busy) return;
+    setBusy(true); setError(null);
+    const userMsg = input.trim();
+    setInput("");
+    try {
+      const r = await multiCharacterTurn(agents, sahneHafiza.filter(m => m.speaker !== "narrator"), userMsg, {}, ctx);
+      setSahneHafiza(h => [...h, { speaker:"user", text:userMsg }, ...r.replies]);
+    } catch (e) { setError(e.message || "cevap alınamadı"); }
+    setBusy(false);
+  }
+
+  if (!open) return null;
+  return (
+    <div style={{position:"fixed",inset:0,background:`linear-gradient(180deg, rgba(0,0,0,.94) 0%, rgba(13,13,26,.98) 100%)`,zIndex:300,display:"flex",flexDirection:"column",padding:"1rem"}}>
+      <div style={{maxWidth:780,width:"100%",margin:"0 auto",flex:1,display:"flex",flexDirection:"column",background:"rgba(21,21,31,.6)",border:`1px solid rgba(201,168,76,.3)`,borderRadius:8,overflow:"hidden"}}>
+        <div style={{padding:"1rem 1.4rem",borderBottom:`1px solid rgba(201,168,76,.2)`,background:`linear-gradient(135deg, rgba(201,168,76,.12) 0%, rgba(122,21,21,.08) 100%)`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontFamily:"'Cinzel Decorative',serif",color:GOLD,fontSize:"1.05rem",letterSpacing:".05em"}}>⚖️ Divan-ı Hümâyun</div>
+            <div style={{fontSize:".72rem",color:"rgba(240,224,192,.55)",fontStyle:"italic",marginTop:".15rem"}}>{gameDateTr(ctx.day)} · {agents.length} kişi sahnede</div>
+          </div>
+          <button onClick={onClose} style={{background:"transparent",border:"1px solid rgba(201,168,76,.3)",color:"rgba(240,224,192,.65)",borderRadius:4,padding:".35rem .8rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>çık</button>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"1.25rem 1.4rem"}}>
+          {sahneHafiza.map((m, i) => {
+            if (m.speaker === "narrator") {
+              return <div key={i} style={{padding:".7rem 1rem",marginBottom:".9rem",background:"rgba(201,168,76,.04)",borderLeft:`3px solid rgba(${rgb(GOLD)},.4)`,borderRadius:3,fontSize:".84rem",color:"rgba(240,224,192,.7)",fontStyle:"italic",lineHeight:1.65}}>{m.text}</div>;
+            }
+            const isUser = m.speaker === "user";
+            const meta = AGENT_META[m.speaker];
+            const speakerName = isUser ? (ctx.playerName || "Sen") : (meta?.name || m.speaker);
+            const accent = isUser ? GOLD : (meta?.accent || GOLD);
+            const emoji = isUser ? "🧭" : (meta?.emoji || "·");
+            return (
+              <div key={i} style={{marginBottom:".8rem",display:"flex",flexDirection:isUser?"row-reverse":"row",gap:".6rem",alignItems:"flex-start"}}>
+                <div style={{flexShrink:0,fontSize:"1.4rem",marginTop:".15rem"}}>{emoji}</div>
+                <div style={{maxWidth:"82%",padding:".7rem .95rem",background:isUser?`rgba(${rgb(GOLD)},.08)`:`rgba(${rgb(accent)},.06)`,border:`1px solid rgba(${rgb(accent)},.22)`,borderRadius:6}}>
+                  <div style={{fontSize:".7rem",color:accent,marginBottom:".25rem",fontWeight:600}}>{speakerName}</div>
+                  <div style={{fontSize:".88rem",color:IVORY,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                </div>
+              </div>
+            );
+          })}
+          {busy && <div style={{padding:".6rem 1rem",color:"rgba(201,168,76,.6)",fontSize:".82rem",fontStyle:"italic"}}>karakterler sırayla konuşuyor...</div>}
+          {error && <div style={{padding:".7rem 1rem",background:"rgba(192,57,43,.12)",border:"1px solid rgba(192,57,43,.3)",borderRadius:4,color:"#e74c3c",fontSize:".82rem",marginBottom:".8rem"}}>{error}</div>}
+          <div ref={sonuneRef}/>
+        </div>
+        <div style={{borderTop:`1px solid rgba(201,168,76,.18)`,padding:"1rem 1.4rem",background:"rgba(0,0,0,.3)",display:"flex",gap:".4rem"}}>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&gonder()} placeholder="Sözünüzü buyurunuz..." disabled={busy} style={{flex:1,padding:".55rem .8rem",background:"rgba(0,0,0,.4)",border:`1px solid rgba(201,168,76,.25)`,borderRadius:4,color:IVORY,fontSize:".85rem",outline:"none",fontFamily:"inherit"}}/>
+          <button onClick={gonder} disabled={busy||!input.trim()} style={{padding:".5rem 1.2rem",background:input.trim()&&!busy?GOLD:"rgba(201,168,76,.2)",border:"none",borderRadius:4,color:DARK,cursor:input.trim()&&!busy?"pointer":"not-allowed",fontSize:".82rem",fontFamily:"'Cinzel Decorative',serif",fontWeight:700}}>↑</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
 function App() {
+  // Auth / role
   const [phase, setPhase] = useState("apikey");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("claude-sonnet-4-5-20250929");
   const [player, setPlayer] = useState("Yolcu");
   const [playerRole, setPlayerRole] = useState("yolcu");
+
+  // Navigation
   const [locId, setLocId] = useState("topkapi");
   const [agentId, setAgentId] = useState(null);
-  const [convos, setConvos] = useState({});
+  const [convos, setConvos] = useState({}); // {agentId: [{role,text}]}
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState(false);
-  const [evIdx, setEvIdx] = useState(0);
 
+  // World time
   const [day, setDay] = useState(1);
   const [timeIdx, setTimeIdx] = useState(0);
+  const [evIdx, setEvIdx] = useState(0);
+
+  // Chronicle + activity
   const [chronicle, setChronicle] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [chronicleOpen, setChronicleOpen] = useState(false);
@@ -944,37 +1624,56 @@ function App() {
   const [mailboxOpen, setMailboxOpen] = useState(false);
   const sentNotifs = useRef(new Set());
 
-  const chatEnd = useRef(null);
-  const typeTimer = useRef(null);
+  // FAZ 3 — Matrix, ahval, rumors
+  const [matrix, setMatrix] = useState(() => ({ ...ILK_MATRIS, user: ILK_USER_MATRIS }));
+  const [ahval, setAhval] = useState(ILK_AHVAL);
+  const [pendingRumors, setPendingRumors] = useState({}); // {agentId: [rumor]}
+  const [tetiklenmis, setTetiklenmis] = useState([]); // tetiklenen senaryo idleri
+  const [silinmis, setSilinmis] = useState([]); // sahneden çıkan karakter idleri
+  const [sonInisiyatif, setSonInisiyatif] = useState({}); // {char: gunSayisi} cooldown
+  const [tetiklenenCiviler, setTetiklenenCiviler] = useState([]);
+  const [matrisOpen, setMatrisOpen] = useState(false);
+  const [linkContext, setLinkContext] = useState("");
+  const [pasteOpen, setPasteOpen] = useState(false);
 
-  // Ambient ticker
+  // Scene state
+  const [activeScenario, setActiveScenario] = useState(null);
+  const [divanOpen, setDivanOpen] = useState(false);
+  const [divanAgents, setDivanAgents] = useState([]);
+
+  const chatEnd = useRef(null);
+
+  // ── EFFECTS ──
   useEffect(() => {
     const t = setInterval(() => setEvIdx(i => (i + 1) % EVENTS.length), 7000);
     return () => clearInterval(t);
   }, []);
 
-  // World time
+  // World time ticker
   useEffect(() => {
     if (phase !== "game") return;
     const t = setInterval(() => {
-      setTimeIdx(prev => { if (prev >= 3) { setDay(d => d + 1); return 0; } return prev + 1; });
+      setTimeIdx(prev => {
+        if (prev >= 3) { setDay(d => d + 1); return 0; }
+        return prev + 1;
+      });
     }, TICK_MS);
     return () => clearInterval(t);
   }, [phase]);
 
-  // Chronicle events
+  // Chronicle background events
   useEffect(() => {
     if (phase !== "game") return;
     const newEvents = TIMELINE.filter(e => e.day === day && e.t === timeIdx);
     if (newEvents.length > 0) {
-      setChronicle(c => [...newEvents, ...c].slice(0, 60));
+      setChronicle(c => [...newEvents, ...c].slice(0, 80));
       setNewEventFlash(true);
       const tm = setTimeout(() => setNewEventFlash(false), 4000);
       return () => clearTimeout(tm);
     }
   }, [day, timeIdx, phase]);
 
-  // Role-based notifications
+  // Role-based ambient notifications
   useEffect(() => {
     if (phase !== "game") return;
     const notes = generateNotifications(day, timeIdx, playerRole, sentNotifs.current);
@@ -984,287 +1683,355 @@ function App() {
     }
   }, [day, timeIdx, phase, playerRole]);
 
-  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [convos, agentId, waiting]);
-  useEffect(() => () => clearInterval(typeTimer.current), []);
+  // FAZ 3 — Tarihî çiviler kontrolü (her gün değişiminde)
+  useEffect(() => {
+    if (phase !== "game") return;
+    TARIHI_CIVILER.forEach(civi => {
+      if (civi.day === day && civi.t === timeIdx && !tetiklenenCiviler.includes(civi.id)) {
+        // Etkileri uygula
+        const newAhval = applyAhvalEffects(ahval, civi.etki || {});
+        setAhval(newAhval);
+        // Vekayinameye işle
+        setChronicle(c => [{ day, t:timeIdx, text:`【${civi.baslik}】 ${civi.metin}`, agents:civi.agents }, ...c].slice(0, 80));
+        // Karakter silmek gerekiyorsa
+        if (civi.silinir) setSilinmis(s => [...s, ...civi.silinir]);
+        setTetiklenenCiviler(t => [...t, civi.id]);
+        // Bildirim
+        setMailbox(m => [...m, {
+          id: "civi-"+civi.id, from: "rustem", title: "Saraydan Haber: "+civi.baslik,
+          body: civi.metin, read:false, day, t:timeIdx,
+          action: null
+        }]);
+      }
+    });
+  }, [day, timeIdx, phase]);
+
+  // FAZ 3 — Doğal sürüklenme (her gün değişiminde)
+  useEffect(() => {
+    if (phase !== "game" || day < 2) return;
+    setAhval(a => uygulaDogalSurukleme(a, day));
+    // Cooldown azalt
+    setSonInisiyatif(prev => {
+      const next = {};
+      Object.entries(prev).forEach(([k,v]) => { if (v > 1) next[k] = v - 1; });
+      return next;
+    });
+  }, [day, phase]);
+
+  // FAZ 3 — Senaryo tetikleme kontrolü
+  useEffect(() => {
+    if (phase !== "game" || activeScenario || divanOpen) return;
+    // Aday senaryolar
+    const state = { tetiklenmis, silinmis, ahval, matrix };
+    const adaylar = SENARYOLAR.filter(s => {
+      if (tetiklenmis.includes(s.id)) return false;
+      if (day < s.gun_aralik[0] || day > s.gun_aralik[1]) return false;
+      if (s.on_kosul && !s.on_kosul(state)) return false;
+      return true;
+    });
+    adaylar.forEach(s => {
+      if (Math.random() < s.olasilik * 0.18) { // her tick'te düşük şans
+        setMailbox(m => {
+          // aynı senaryo kutuda zaten varsa eklemiyoruz
+          if (m.some(x => x.id === "scn-"+s.id)) return m;
+          return [...m, {
+            id: "scn-"+s.id, from: s.karakterler[0], title: "Bir mesele: "+s.baslik,
+            body: s.metin.slice(0,180)+"...", read:false, day, t:timeIdx,
+            action: { type:"scenario", scenarioId: s.id }
+          }];
+        });
+      }
+    });
+  }, [day, timeIdx, phase]);
+
+  // FAZ 3 — Karakter inisiyatifi (eşik 3)
+  useEffect(() => {
+    if (phase !== "game" || activeScenario || divanOpen) return;
+    const sahneler = karakterInisiyatifi(ahval, silinmis, sonInisiyatif);
+    sahneler.slice(0, 1).forEach(s => { // bir tickte en fazla 1 inisiyatif
+      const meta = AGENT_META[s.char];
+      const baslikMap = { "şüphe_konuşması":"sizi görmek istiyor", "siyasî_arz":"konuşmak istediği bir mesele var", "itiraf_anı":"sizi bekliyor", "yüzleşme":"bir hesap arıyor" };
+      const baslik = baslikMap[s.tip] || "sizinle konuşmak istiyor";
+      setMailbox(m => {
+        const id = "ini-"+s.char+"-d"+day;
+        if (m.some(x => x.id === id)) return m;
+        return [...m, {
+          id, from: s.char, title: meta.name+" "+baslik,
+          body: `İçinden geçenler birikti gibi. ${meta.name} sizi görmek istiyor.`,
+          read:false, day, t:timeIdx,
+          action: { type:"goto", locId: findCharLoc(s.char), agentId: s.char }
+        }];
+      });
+      setSonInisiyatif(p => ({ ...p, [s.char]: 4 })); // 4 gün cooldown
+    });
+  }, [day, ahval, phase]);
+
+  // Auto-scroll
+  useEffect(() => { chatEnd.current?.scrollIntoView({ behavior:"smooth" }); }, [convos, agentId, waiting]);
+
+  // ── helpers ──
+  function findCharLoc(charId) {
+    for (const [lid, l] of Object.entries(LOCATIONS)) {
+      if (l.agents.includes(charId)) return lid;
+    }
+    return "topkapi";
+  }
 
   const unreadCount = mailbox.filter(m => !m.read).length;
 
-  const handleSetAgent = (id) => {
-    clearInterval(typeTimer.current);
-    setBusy(false); setWaiting(false); setAgentId(id);
+  // ── Auth flow ──
+  const handleApiKey = ({ apiKey, model }) => {
+    setApiKey(apiKey); setModel(model); setPhase("role");
+  };
+  const handleRole = ({ playerName, playerRole }) => {
+    setPlayer(playerName); setPlayerRole(playerRole); setPhase("game");
   };
 
+  // ── Mail action ──
   const handleMailAction = (mail) => {
-    if (mail.action && mail.action.type === "goto") {
+    if (!mail.action) { setMailboxOpen(false); return; }
+    if (mail.action.type === "goto") {
       setLocId(mail.action.locId);
       setAgentId(mail.action.agentId);
       setMailboxOpen(false);
+    } else if (mail.action.type === "divan") {
+      setDivanAgents(mail.action.agents || []);
+      setDivanOpen(true);
+      setMailboxOpen(false);
+    } else if (mail.action.type === "scenario") {
+      const s = SENARYOLAR.find(x => x.id === mail.action.scenarioId);
+      if (s) {
+        setActiveScenario(s);
+        setMailboxOpen(false);
+      }
     }
   };
 
-  const markMailRead = (id) => {
+  const handleMarkRead = (id) => {
     setMailbox(m => m.map(x => x.id === id ? {...x, read:true} : x));
   };
 
-  // Detect URL in user message (basic)
-  const extractUrl = (text) => {
-    const m = text.match(/https?:\/\/[^\s]+/);
-    return m ? m[0] : null;
-  };
-
+  // ── Send to a single agent ──
   const send = async () => {
-    if (!input.trim() || busy || !agentId) return;
-    const msg = input.trim();
-    const aId = agentId;
-    setInput(""); setBusy(true); setWaiting(true);
-
-    const prev = convos[aId] || [];
-    const next = [...prev, { role: "user", text: msg }];
-    setConvos(c => ({ ...c, [aId]: next }));
-
-    const topic = msg.length > 90 ? msg.slice(0, 87) + "..." : msg;
-    setActivityLog(log => [...log, { agentId: aId, topic, day, t: timeIdx }].slice(-20));
-
-    // Detect link and prepare context
-    const url = extractUrl(msg);
-    let linkContext = null;
-    if (url) {
-      linkContext = `Kullanıcı şu bağlantıyı paylaştı: ${url}. Bağlantının içeriğini doğrudan okuyamıyorsun, ama URL'den ne tür bir kaynak olduğunu çıkar (örneğin: dergipark = Türk akademik makale, jstor = uluslararası akademik, wikipedia = ansiklopedi, vs.) ve kullanıcıya bu kaynağın türü ve muhtemel konusu hakkında karakterinin perspektifinden konuş.`;
-    }
-
-    const ctx = { day, timeIdx, chronicle, activityLog, playerName: player, playerRole, apiKey, model, linkContext };
-
+    if (!input.trim() || !agentId || busy) return;
+    const userMsg = input.trim();
+    setInput("");
+    setBusy(true); setWaiting(true);
+    const history = convos[agentId] || [];
+    setConvos(c => ({...c, [agentId]: [...(c[agentId] || []), { role:"user", text:userMsg }]}));
+    const ctx = {
+      apiKey, model, day, timeIdx, chronicle, activityLog,
+      playerName: player, playerRole, linkContext,
+      matrix, ahval, pendingRumors: pendingRumors[agentId] || []
+    };
     try {
-      const reply = await fetchAgentReply(aId, prev, msg, ctx);
+      const reply = await fetchAgentReply(agentId, history, userMsg, ctx);
+      setConvos(c => ({...c, [agentId]: [...(c[agentId] || []), { role:"user", text:userMsg }, { role:"assistant", text:reply }]}));
+      setActivityLog(a => [...a, { agentId, topic: userMsg.slice(0,90), day, t:timeIdx }].slice(-30));
+      // Söylenti kuyruğunda bu karaktere düşmüş olanları temizle
+      setPendingRumors(p => { const next = {...p}; delete next[agentId]; return next; });
+    } catch (e) {
+      setConvos(c => ({...c, [agentId]: [...(c[agentId] || []), { role:"user", text:userMsg }, { role:"assistant", text:"(Cevap alınamadı: " + (e.message||"hata") + ")" }]}));
+    }
+    setBusy(false); setWaiting(false);
+  };
 
-      setWaiting(false);
-      setConvos(c => ({ ...c, [aId]: [...next, { role: "agent", text: "" }] }));
-
-      let i = 0;
-      clearInterval(typeTimer.current);
-      typeTimer.current = setInterval(() => {
-        i = Math.min(i + 8, reply.length);
-        setConvos(c => {
-          const arr = [...(c[aId] || [])];
-          if (arr.length > 0) arr[arr.length - 1] = { role: "agent", text: reply.slice(0, i) };
-          return { ...c, [aId]: arr };
-        });
-        if (i >= reply.length) { clearInterval(typeTimer.current); setBusy(false); }
-      }, 16);
-
-    } catch (err) {
-      setWaiting(false);
-      setBusy(false);
-      setConvos(c => ({
-        ...c,
-        [aId]: [...next, { role: "agent", text: `⚠️ ${err.message}` }],
-      }));
+  // ── Senaryo tamamlandığında ──
+  const handleScenarioComplete = (result) => {
+    if (!activeScenario) return;
+    if (result.partial && result.etki) {
+      setMatrix(m => applyMatrixDeltas(m, result.etki));
+    }
+    if (result.tamamlandi) {
+      setTetiklenmis(t => [...t, activeScenario.id]);
+      setChronicle(c => [{ day, t:timeIdx, text:`【Sahne】 ${activeScenario.baslik}: Olay yaşandı.`, agents:activeScenario.karakterler }, ...c].slice(0, 80));
+      setActiveScenario(null);
+      // Tek-iki gün ilerlet
+      setDay(d => d + 1);
+    } else if (!result.partial) {
+      setActiveScenario(null);
     }
   };
 
-  if (phase === "apikey") {
-    return <ApiKeyScreen onSubmit={({apiKey: k, model: m}) => { setApiKey(k); setModel(m); setPhase("role"); }} />;
-  }
-  if (phase === "role") {
-    return <RoleScreen onSelect={({playerName, playerRole}) => { setPlayer(playerName); setPlayerRole(playerRole); setPhase("game"); }} />;
-  }
+  // ── RENDER ──
+  if (phase === "apikey") return <ApiKeyScreen onSubmit={handleApiKey}/>;
+  if (phase === "role") return <RoleScreen onSelect={handleRole}/>;
 
   const loc = LOCATIONS[locId];
-  const ag = agentId ? AGENT_META[agentId] : null;
-  const convo = agentId ? (convos[agentId] || []) : [];
+  const aktifAgentler = (loc.agents || []).filter(a => !silinmis.includes(a));
   const role = ROLES[playerRole];
-
-  // Filter out the player's own character from agents list
-  const excludeSelf = (agents) => {
-    if (playerRole === "yolcu") return agents;
-    return agents.filter(a => a !== playerRole);
-  };
+  const ctx = { apiKey, model, day, timeIdx, chronicle, activityLog, playerName:player, playerRole, linkContext, matrix, ahval };
 
   return (
-    <div style={{minHeight:"100vh",background:DARK,color:IVORY,fontFamily:"'EB Garamond',Georgia,serif",display:"flex",flexDirection:"column",fontSize:"16px"}}>
+    <div style={{minHeight:"100vh",background:`linear-gradient(180deg, rgba(13,13,26,1) 0%, rgba(20,15,15,1) 100%)`,color:IVORY,fontFamily:"'EB Garamond',Georgia,serif"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
-        *{box-sizing:border-box;}
-        ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:rgba(201,168,76,.22);border-radius:2px;}
-        .lt{transition:all .15s;} .lt:hover{background:rgba(201,168,76,.12)!important;}
-        .ac{transition:all .18s;} .ac:hover{background:rgba(255,255,255,.07)!important;transform:translateY(-1px);}
-        .suggest-btn{transition:all .15s;}
-        .suggest-btn:hover{background:rgba(201,168,76,.18)!important;border-color:rgba(201,168,76,.5)!important;}
-        .send-btn{transition:all .15s;} .send-btn:hover:not(:disabled){opacity:.85;}
-        .icon-btn{transition:all .15s;cursor:pointer;}
-        .icon-btn:hover{background:rgba(201,168,76,.14)!important;}
-        @keyframes think{0%,100%{opacity:.25;transform:scale(.85);}50%{opacity:1;transform:scale(1.15);}}
-        .dot{display:inline-block;width:6px;height:6px;border-radius:50%;animation:think 1.2s ease-in-out infinite;}
-        .dot:nth-child(2){animation-delay:.18s;} .dot:nth-child(3){animation-delay:.36s;}
-        @keyframes fade-in{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
-        .msg-in{animation:fade-in .3s ease both;}
-        @keyframes flash-pulse{0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,.5);}50%{box-shadow:0 0 0 8px rgba(201,168,76,0);}}
-        .flash{animation:flash-pulse 1.5s ease-in-out infinite;}
-        @keyframes badge-pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.15);}}
-        .badge{animation:badge-pulse 2s ease-in-out infinite;}
+        @keyframes ev-scroll{0%{opacity:0;transform:translateY(8px);}10%,90%{opacity:1;transform:none;}100%{opacity:0;transform:translateY(-8px);}}
+        @keyframes pulse-gold{0%,100%{box-shadow:0 0 0 0 rgba(201,168,76,.4);}50%{box-shadow:0 0 0 8px rgba(201,168,76,0);}}
+        .ev-fly{animation:ev-scroll 7s ease-in-out;}
+        .flash-event{animation:pulse-gold 1s ease 3;}
+        .loc-card{transition:all .2s;cursor:pointer;}
+        .loc-card:hover{transform:translateY(-2px);border-color:rgba(201,168,76,.5)!important;}
+        .agent-pick{transition:all .15s;cursor:pointer;}
+        .agent-pick:hover{transform:translateX(3px);}
+        .suggestion-btn{transition:all .15s;cursor:pointer;}
+        .suggestion-btn:hover{background:rgba(201,168,76,.1)!important;border-color:rgba(201,168,76,.4)!important;}
       `}</style>
 
-      {/* HEADER */}
-      <div style={{padding:".55rem .9rem",borderBottom:`1px solid rgba(201,168,76,.16)`,background:"rgba(0,0,0,.5)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:".4rem"}}>
-        <div style={{minWidth:0,flex:1}}>
-          <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:".72rem",color:GOLD,letterSpacing:".13em"}}>☽ İSTANBUL · 1550</div>
-          <div style={{fontSize:".62rem",color:"rgba(240,224,192,.42)"}}>
-            {role.emoji} {role.id === "yolcu" ? player : role.name}
+      {/* Top bar */}
+      <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(13,13,26,.96)",backdropFilter:"blur(8px)",borderBottom:`1px solid rgba(201,168,76,.18)`,padding:".6rem 1rem",display:"flex",alignItems:"center",justifyContent:"space-between",gap:".5rem",flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:".7rem",minWidth:0,flexShrink:1}}>
+          <div style={{fontSize:"1.5rem"}}>☽</div>
+          <div style={{minWidth:0}}>
+            <div style={{fontFamily:"'Cinzel Decorative',serif",color:GOLD,fontSize:".82rem",letterSpacing:".05em"}}>İstanbul, 1550</div>
+            <div style={{fontSize:".66rem",color:"rgba(240,224,192,.5)",fontStyle:"italic"}}>{role.emoji} {role.name === "Yolcu" ? player : role.name} · Gün {day} ({gameDateTr(day)}) · {TIME_LABELS[timeIdx]} {TIME_ICONS[timeIdx]}</div>
           </div>
         </div>
-
-        {/* Mail icon */}
-        <button className="icon-btn" onClick={() => setMailboxOpen(true)}
-          style={{position:"relative",padding:".3rem .55rem",background:"rgba(201,168,76,.06)",border:"1px solid rgba(201,168,76,.25)",borderRadius:20,color:GOLD,fontSize:".95rem",cursor:"pointer"}}>
-          ✉️
-          {unreadCount > 0 && (
-            <span className="badge" style={{position:"absolute",top:-4,right:-4,minWidth:18,height:18,padding:"0 5px",background:"#c0392b",color:"#fff",fontSize:".64rem",fontWeight:"bold",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              {unreadCount}
-            </span>
-          )}
-        </button>
-
-        {/* Clock */}
-        <button className={`icon-btn ${newEventFlash ? "flash" : ""}`} onClick={() => setChronicleOpen(true)}
-          style={{display:"flex",alignItems:"center",gap:".35rem",padding:".3rem .6rem",background:"rgba(201,168,76,.06)",border:"1px solid rgba(201,168,76,.25)",borderRadius:20,color:GOLD,fontSize:".66rem",cursor:"pointer",letterSpacing:".05em",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-          <span style={{fontSize:".85rem"}}>{TIME_ICONS[timeIdx]}</span>
-          <span>G{day}·{TIME_LABELS[timeIdx].slice(0,3).toUpperCase()}</span>
-        </button>
+        <div style={{display:"flex",gap:".4rem",alignItems:"center",flexShrink:0}}>
+          <button onClick={()=>setPasteOpen(true)} title="Bir kaynak ya da metin paylaş" style={{background:linkContext?`rgba(${rgb(GOLD)},.18)`:"rgba(255,255,255,.04)",border:`1px solid rgba(201,168,76,${linkContext?.5:.2})`,color:linkContext?GOLD:"rgba(240,224,192,.65)",borderRadius:4,padding:".4rem .6rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>
+            📎
+          </button>
+          <button onClick={()=>setMatrisOpen(true)} title="Saray münasebetleri" style={{background:"rgba(255,255,255,.04)",border:`1px solid rgba(201,168,76,.2)`,color:"rgba(240,224,192,.7)",borderRadius:4,padding:".4rem .6rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>
+            🕸️
+          </button>
+          <button onClick={()=>setChronicleOpen(true)} className={newEventFlash?"flash-event":""} title="Vekâyiname" style={{background:newEventFlash?`rgba(${rgb(GOLD)},.2)`:"rgba(255,255,255,.04)",border:`1px solid rgba(201,168,76,${newEventFlash?.5:.2})`,color:"rgba(240,224,192,.7)",borderRadius:4,padding:".4rem .6rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>
+            📜
+          </button>
+          <button onClick={()=>setMailboxOpen(true)} title="Posta kutusu" style={{position:"relative",background:"rgba(255,255,255,.04)",border:`1px solid rgba(201,168,76,.2)`,color:"rgba(240,224,192,.7)",borderRadius:4,padding:".4rem .6rem",cursor:"pointer",fontSize:".78rem",fontFamily:"inherit"}}>
+            ✉️
+            {unreadCount > 0 && <span style={{position:"absolute",top:-4,right:-4,minWidth:16,height:16,padding:"0 4px",background:CRIMSON,color:"white",borderRadius:8,fontSize:".62rem",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>{unreadCount}</span>}
+          </button>
+        </div>
       </div>
 
-      {/* LOCATION TABS */}
-      <div style={{display:"flex",overflowX:"auto",padding:".4rem .55rem",gap:".35rem",borderBottom:`1px solid rgba(201,168,76,.1)`,flexShrink:0,scrollbarWidth:"none"}}>
-        {Object.values(LOCATIONS).map(l => {
-          const active = l.id === locId;
-          return (
-            <button key={l.id} className="lt" onClick={() => { setLocId(l.id); handleSetAgent(null); }}
-              style={{flex:"0 0 auto",padding:".3rem .58rem",background:active?"rgba(201,168,76,.18)":"transparent",border:`1px solid ${active?GOLD:"rgba(201,168,76,.16)"}`,borderRadius:18,color:active?GOLD:"rgba(240,224,192,.5)",fontSize:".68rem",cursor:"pointer",whiteSpace:"nowrap"}}>
-              {l.emoji} {l.name}
-            </button>
-          );
-        })}
+      {/* Ambient ticker */}
+      <div style={{padding:".3rem 1rem",background:"rgba(201,168,76,.04)",borderBottom:`1px solid rgba(201,168,76,.1)`,fontSize:".74rem",color:"rgba(240,224,192,.65)",fontStyle:"italic",minHeight:24,textAlign:"center",overflow:"hidden"}}>
+        <div key={evIdx} className="ev-fly">{EVENTS[evIdx]}</div>
       </div>
 
-      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-        {!agentId && (
-          <div style={{flex:1,overflowY:"auto",padding:"1rem"}}>
-            <div style={{textAlign:"center",marginBottom:"1.2rem",padding:"1.2rem 1rem",background:"rgba(255,255,255,.025)",border:`1px solid rgba(201,168,76,.12)`,borderRadius:8}}>
-              <div style={{fontSize:"2.8rem",marginBottom:".35rem"}}>{loc.emoji}</div>
-              <div style={{fontFamily:"'Cinzel Decorative',serif",fontSize:"1rem",color:GOLD,marginBottom:".15rem"}}>{loc.name}</div>
-              <div style={{fontSize:".66rem",color:"rgba(201,168,76,.55)",letterSpacing:".13em",marginBottom:".8rem"}}>{loc.subtitle}</div>
-              <p style={{color:"rgba(240,224,192,.62)",lineHeight:1.7,fontSize:".84rem",fontStyle:"italic",maxWidth:400,margin:"0 auto"}}>{loc.desc}</p>
-            </div>
-
-            <p style={{fontSize:".62rem",color:"rgba(201,168,76,.5)",letterSpacing:".15em",textTransform:"uppercase",marginBottom:".6rem"}}>Konuşabileceğiniz kişiler</p>
-
-            <div style={{display:"flex",flexDirection:"column",gap:".55rem"}}>
-              {excludeSelf(loc.agents).map(aid => {
-                const a = AGENT_META[aid];
-                if (!a) return null;
-                const r = rgb(a.accent);
-                const has = (convos[aid]?.length ?? 0) > 0;
-                return (
-                  <button key={aid} className="ac" onClick={() => handleSetAgent(aid)}
-                    style={{display:"flex",alignItems:"center",gap:".8rem",padding:".85rem",cursor:"pointer",textAlign:"left",background:"rgba(255,255,255,.03)",border:`1px solid rgba(${r},.26)`,borderRadius:8,color:IVORY}}>
-                    <div style={{width:44,height:44,borderRadius:"50%",flexShrink:0,background:`rgba(${r},.1)`,border:`2px solid rgba(${r},.42)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.35rem"}}>{a.emoji}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:"'Playfair Display',serif",color:a.accent,fontSize:".92rem",marginBottom:".08rem"}}>{a.name}</div>
-                      <div style={{fontSize:".7rem",color:"rgba(240,224,192,.45)",fontStyle:"italic"}}>{a.title}</div>
-                      {has && <div style={{fontSize:".62rem",color:"rgba(201,168,76,.45)",marginTop:".2rem"}}>✦ Konuşma devam ediyor</div>}
-                    </div>
-                    <div style={{color:"rgba(201,168,76,.32)",fontSize:"1.1rem"}}>›</div>
-                  </button>
-                );
-              })}
-
-              {excludeSelf(loc.agents).length === 0 && (
-                <p style={{fontStyle:"italic",color:"rgba(240,224,192,.4)",textAlign:"center",padding:"1rem"}}>Burada konuşabileceğiniz kimse yok. Başka bir mekâna geçin.</p>
-              )}
-            </div>
-
-            <p style={{textAlign:"center",marginTop:"1.4rem",fontSize:".68rem",color:"rgba(240,224,192,.25)",fontStyle:"italic",lineHeight:1.7}}>
-              Karakterler şu an olan olayları biliyor. Posta kutunuza dikkat edin —<br/>rolünüze özel haberler ve davetler gelir.
-            </p>
+      {/* Body */}
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"1rem",display:"grid",gridTemplateColumns:"minmax(220px, 280px) 1fr",gap:"1rem"}}>
+        {/* Left: locations + agents */}
+        <div>
+          <div style={{fontSize:".66rem",color:"rgba(201,168,76,.65)",letterSpacing:".18em",textTransform:"uppercase",marginBottom:".5rem"}}>Mekânlar</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:".4rem",marginBottom:"1.2rem"}}>
+            {Object.values(LOCATIONS).map(l => {
+              const isActive = l.id === locId;
+              return (
+                <div key={l.id} className="loc-card" onClick={()=>{ setLocId(l.id); setAgentId(null); }} style={{padding:".5rem .6rem",background:isActive?`rgba(${rgb(GOLD)},.12)`:"rgba(255,255,255,.03)",border:`1px solid rgba(201,168,76,${isActive?.5:.18})`,borderRadius:4,textAlign:"center"}}>
+                  <div style={{fontSize:"1.2rem"}}>{l.emoji}</div>
+                  <div style={{fontSize:".7rem",color:isActive?GOLD:"rgba(240,224,192,.7)",marginTop:".2rem",fontWeight:isActive?600:400,lineHeight:1.2}}>{l.name}</div>
+                </div>
+              );
+            })}
           </div>
-        )}
 
-        {agentId && ag && (
-          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-            <div style={{padding:".55rem .9rem",flexShrink:0,borderBottom:`1px solid rgba(${rgb(ag.accent)},.18)`,background:`rgba(${rgb(ag.accent)},.04)`,display:"flex",alignItems:"center",gap:".7rem"}}>
-              <button onClick={() => handleSetAgent(null)} style={{background:"transparent",border:"none",color:"rgba(240,224,192,.4)",cursor:"pointer",fontSize:"1.3rem",padding:0,lineHeight:1}}>‹</button>
-              <div style={{width:32,height:32,borderRadius:"50%",flexShrink:0,background:`rgba(${rgb(ag.accent)},.12)`,border:`1px solid rgba(${rgb(ag.accent)},.42)`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.1rem"}}>{ag.emoji}</div>
-              <div style={{flex:1}}>
-                <div style={{fontFamily:"'Playfair Display',serif",color:ag.accent,fontSize:".85rem"}}>{ag.name}</div>
-                <div style={{fontSize:".6rem",color:"rgba(240,224,192,.36)",fontStyle:"italic"}}>{ag.title}</div>
-              </div>
-              {busy && waiting && (<div style={{fontSize:".58rem",color:`rgba(${rgb(ag.accent)},.6)`,letterSpacing:".06em",fontStyle:"italic"}}>düşünüyor...</div>)}
+          <div style={{padding:".7rem .8rem",background:"rgba(201,168,76,.04)",border:"1px solid rgba(201,168,76,.15)",borderRadius:6,marginBottom:"1rem"}}>
+            <div style={{display:"flex",alignItems:"center",gap:".4rem",marginBottom:".3rem"}}>
+              <span style={{fontSize:"1.2rem"}}>{loc.emoji}</span>
+              <span style={{fontFamily:"'Playfair Display',serif",color:GOLD,fontSize:".88rem",fontWeight:600}}>{loc.name}</span>
             </div>
+            <div style={{fontSize:".68rem",color:"rgba(240,224,192,.45)",fontStyle:"italic",marginBottom:".4rem"}}>{loc.subtitle}</div>
+            <div style={{fontSize:".74rem",color:"rgba(240,224,192,.65)",lineHeight:1.55}}>{loc.desc}</div>
+          </div>
 
-            <div style={{flex:1,overflowY:"auto",padding:"1rem",display:"flex",flexDirection:"column",gap:".8rem"}}>
-              {convo.length === 0 && !waiting && (
-                <div style={{textAlign:"center",padding:"1.4rem .5rem"}}>
-                  <div style={{color:"rgba(240,224,192,.34)",fontStyle:"italic",fontSize:".87rem",lineHeight:1.8,marginBottom:"1.2rem"}}>
-                    {ag.name}'a yaklaşıyorsunuz.<br/>
-                    <span style={{fontSize:".77rem",opacity:.7}}>Ne sormak istersiniz?</span>
-                  </div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:".4rem",justifyContent:"center"}}>
-                    {(AGENT_SUGGESTIONS[agentId] || []).map((s, i) => (
-                      <button key={i} className="suggest-btn" onClick={() => setInput(s)}
-                        style={{padding:".36rem .7rem",background:"rgba(201,168,76,.07)",border:"1px solid rgba(201,168,76,.22)",borderRadius:18,color:"rgba(240,224,192,.6)",fontSize:".74rem",cursor:"pointer",fontStyle:"italic"}}>{s}</button>
-                    ))}
+          <div style={{fontSize:".66rem",color:"rgba(201,168,76,.65)",letterSpacing:".18em",textTransform:"uppercase",marginBottom:".5rem"}}>Buradakiler</div>
+          {aktifAgentler.length === 0 ? (
+            <p style={{color:"rgba(240,224,192,.4)",fontStyle:"italic",fontSize:".82rem"}}>Burada konuşacak kimse yok.</p>
+          ) : (
+            aktifAgentler.filter(a => {
+              const excl = ROLES[playerRole]?.excludeFrom || [];
+              return !excl.includes(a);
+            }).map(aid => {
+              const meta = AGENT_META[aid];
+              const isActive = agentId === aid;
+              return (
+                <div key={aid} className="agent-pick" onClick={()=>{ setAgentId(aid); }} style={{padding:".55rem .7rem",marginBottom:".35rem",background:isActive?`rgba(${rgb(meta.accent)},.14)`:"rgba(255,255,255,.02)",border:`1px solid rgba(${rgb(meta.accent)},${isActive?.5:.18})`,borderRadius:4,display:"flex",alignItems:"center",gap:".5rem"}}>
+                  <span style={{fontSize:"1.1rem"}}>{meta.emoji}</span>
+                  <div style={{minWidth:0}}>
+                    <div style={{color:meta.accent,fontSize:".82rem",fontWeight:600,lineHeight:1.2}}>{meta.name}</div>
+                    <div style={{fontSize:".64rem",color:"rgba(240,224,192,.5)",fontStyle:"italic",lineHeight:1.2,marginTop:".1rem"}}>{meta.title}</div>
                   </div>
                 </div>
-              )}
+              );
+            })
+          )}
+        </div>
 
-              {convo.map((msg, i) => (
-                <div key={i} className="msg-in" style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start"}}>
-                  {msg.role === "user" ? (
-                    <div style={{maxWidth:"80%",padding:".55rem .85rem",background:"rgba(201,168,76,.12)",border:"1px solid rgba(201,168,76,.26)",borderRadius:"10px 10px 2px 10px",fontSize:".88rem",lineHeight:1.6,whiteSpace:"pre-wrap"}}>{msg.text}</div>
-                  ) : (
-                    <div style={{maxWidth:"90%",padding:".7rem .92rem",background:`rgba(${rgb(ag.accent)},.06)`,border:`1px solid rgba(${rgb(ag.accent)},.18)`,borderRadius:"2px 10px 10px 10px",fontSize:".88rem",lineHeight:1.78,whiteSpace:"pre-wrap"}}>
-                      <div style={{fontSize:".57rem",color:ag.accent,letterSpacing:".1em",marginBottom:".35rem",opacity:.8}}>{ag.name.toUpperCase()}</div>
-                      {msg.text}
-                      {i === convo.length - 1 && busy && !waiting && (<span style={{display:"inline-block",width:2,height:"1em",background:ag.accent,marginLeft:2,verticalAlign:"text-bottom",animation:"think .8s ease-in-out infinite"}}/>)}
+        {/* Right: chat */}
+        <div style={{minHeight:"60vh",display:"flex",flexDirection:"column",background:"rgba(255,255,255,.02)",border:`1px solid rgba(201,168,76,.15)`,borderRadius:6,overflow:"hidden"}}>
+          {!agentId ? (
+            <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem",textAlign:"center"}}>
+              <div>
+                <div style={{fontSize:"2.5rem",marginBottom:".5rem",opacity:.5}}>☽</div>
+                <p style={{color:"rgba(240,224,192,.55)",fontStyle:"italic"}}>Bir mekândan bir karakter seçin.</p>
+                {linkContext && <p style={{color:GOLD,fontSize:".74rem",marginTop:".7rem"}}>📎 Bir kaynak metnini yapıştırdınız — karakterler haberdar olacak.</p>}
+              </div>
+            </div>
+          ) : (() => {
+            const meta = AGENT_META[agentId];
+            const history = convos[agentId] || [];
+            return (
+              <>
+                <div style={{padding:".75rem 1rem",borderBottom:`1px solid rgba(${rgb(meta.accent)},.25)`,background:`rgba(${rgb(meta.accent)},.04)`,display:"flex",alignItems:"center",gap:".6rem"}}>
+                  <span style={{fontSize:"1.5rem"}}>{meta.emoji}</span>
+                  <div>
+                    <div style={{fontFamily:"'Playfair Display',serif",color:meta.accent,fontSize:".95rem",fontWeight:600}}>{meta.name}</div>
+                    <div style={{fontSize:".66rem",color:"rgba(240,224,192,.5)",fontStyle:"italic"}}>{meta.title}</div>
+                  </div>
+                </div>
+                <div style={{flex:1,overflowY:"auto",padding:"1rem 1.2rem",maxHeight:"55vh"}}>
+                  {history.length === 0 && (
+                    <div style={{padding:".8rem",background:"rgba(255,255,255,.02)",border:"1px solid rgba(201,168,76,.12)",borderRadius:6,marginBottom:"1rem"}}>
+                      <div style={{fontSize:".68rem",color:"rgba(201,168,76,.7)",letterSpacing:".12em",textTransform:"uppercase",marginBottom:".4rem"}}>Konuşma başlatın</div>
+                      {(AGENT_SUGGESTIONS[agentId] || []).map((s, i) => (
+                        <div key={i} className="suggestion-btn" onClick={()=>{ setInput(s); }} style={{padding:".4rem .7rem",marginBottom:".25rem",background:"rgba(201,168,76,.04)",border:"1px solid rgba(201,168,76,.18)",borderRadius:3,fontSize:".78rem",color:"rgba(240,224,192,.8)"}}>{s}</div>
+                      ))}
                     </div>
                   )}
+                  {history.map((m, i) => {
+                    const isUser = m.role === "user";
+                    return (
+                      <div key={i} style={{marginBottom:".75rem",display:"flex",flexDirection:isUser?"row-reverse":"row",gap:".5rem",alignItems:"flex-start"}}>
+                        <div style={{flexShrink:0,fontSize:"1.3rem"}}>{isUser?"🧭":meta.emoji}</div>
+                        <div style={{maxWidth:"82%",padding:".65rem .9rem",background:isUser?`rgba(${rgb(GOLD)},.07)`:`rgba(${rgb(meta.accent)},.05)`,border:`1px solid rgba(${rgb(isUser?GOLD:meta.accent)},.2)`,borderRadius:6}}>
+                          <div style={{fontSize:".87rem",color:IVORY,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {waiting && (
+                    <div style={{padding:".5rem 1rem",color:"rgba(201,168,76,.6)",fontSize:".8rem",fontStyle:"italic"}}>düşünüyor...</div>
+                  )}
+                  <div ref={chatEnd}/>
                 </div>
-              ))}
-
-              {waiting && (
-                <div className="msg-in" style={{display:"flex",justifyContent:"flex-start"}}>
-                  <div style={{padding:".65rem .95rem",background:`rgba(${rgb(ag.accent)},.06)`,border:`1px solid rgba(${rgb(ag.accent)},.16)`,borderRadius:"2px 10px 10px 10px",display:"flex",alignItems:"center",gap:".3rem"}}>
-                    <span style={{fontSize:".57rem",color:ag.accent,letterSpacing:".1em",marginRight:".4rem",opacity:.7}}>{ag.name.toUpperCase()}</span>
-                    <span className="dot" style={{background:ag.accent}}/><span className="dot" style={{background:ag.accent}}/><span className="dot" style={{background:ag.accent}}/>
-                  </div>
+                <div style={{borderTop:`1px solid rgba(201,168,76,.15)`,padding:".7rem 1rem",display:"flex",gap:".4rem",background:"rgba(0,0,0,.2)"}}>
+                  <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()} placeholder={`${meta.name} ile konuşun...`} disabled={busy} style={{flex:1,padding:".55rem .8rem",background:"rgba(0,0,0,.4)",border:`1px solid rgba(201,168,76,.22)`,borderRadius:4,color:IVORY,fontSize:".88rem",outline:"none",fontFamily:"inherit"}}/>
+                  <button onClick={send} disabled={busy||!input.trim()} style={{padding:".5rem 1rem",background:input.trim()&&!busy?GOLD:"rgba(201,168,76,.2)",border:"none",borderRadius:4,color:DARK,cursor:input.trim()&&!busy?"pointer":"not-allowed",fontSize:".82rem",fontFamily:"'Cinzel Decorative',serif",fontWeight:700}}>↑</button>
                 </div>
-              )}
-
-              <div ref={chatEnd}/>
-            </div>
-
-            <div style={{padding:".6rem .8rem",borderTop:`1px solid rgba(201,168,76,.1)`,background:"rgba(0,0,0,.38)",flexShrink:0,display:"flex",gap:".5rem",alignItems:"flex-end"}}>
-              <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }}}
-                placeholder={busy ? "" : "Söyleyin... (link de paylaşabilirsiniz)"}
-                disabled={busy} rows={2}
-                style={{flex:1,padding:".5rem .75rem",background:"rgba(201,168,76,.05)",border:"1px solid rgba(201,168,76,.16)",borderRadius:6,color:IVORY,fontFamily:"Georgia,serif",fontSize:".86rem",resize:"none",outline:"none",lineHeight:1.5}}/>
-              <button className="send-btn" onClick={send} disabled={busy || !input.trim()}
-                style={{padding:".5rem 1rem",background:(!busy&&input.trim())?"rgba(201,168,76,.9)":"rgba(201,168,76,.16)",border:"none",borderRadius:6,color:DARK,fontWeight:"bold",cursor:(!busy&&input.trim())?"pointer":"not-allowed",fontSize:"1.05rem"}}>›</button>
-            </div>
-          </div>
-        )}
+              </>
+            );
+          })()}
+        </div>
       </div>
 
-      <div style={{padding:".42rem 1rem",flexShrink:0,borderTop:`1px solid rgba(201,168,76,.07)`,background:"rgba(0,0,0,.52)",fontSize:".68rem",color:"rgba(201,168,76,.6)",fontStyle:"italic",textAlign:"center",minHeight:32,display:"flex",alignItems:"center",justifyContent:"center"}}>
-        {EVENTS[evIdx]}
+      {/* Footer */}
+      <div style={{maxWidth:1100,margin:"0 auto",padding:".4rem 1rem 1.5rem 1rem",fontSize:".66rem",color:"rgba(240,224,192,.3)",textAlign:"center",fontStyle:"italic"}}>
+        © Prof. Dr. Hasan Hüseyin Güneş · livehistory.app — CC BY-NC-SA 4.0 · Faz 3
       </div>
 
-      <MailboxPanel open={mailboxOpen} onClose={()=>setMailboxOpen(false)} mailbox={mailbox} onOpenAction={handleMailAction} onMarkRead={markMailRead}/>
-      <ChroniclePanel open={chronicleOpen} onClose={() => setChronicleOpen(false)} day={day} timeIdx={timeIdx} chronicle={chronicle} activityLog={activityLog}/>
+      {/* Panels & Modals */}
+      <MailboxPanel open={mailboxOpen} onClose={()=>setMailboxOpen(false)} mailbox={mailbox} onOpenAction={handleMailAction} onMarkRead={handleMarkRead}/>
+      <ChroniclePanel open={chronicleOpen} onClose={()=>setChronicleOpen(false)} day={day} timeIdx={timeIdx} chronicle={chronicle}/>
+      <MatrisPanel open={matrisOpen} onClose={()=>setMatrisOpen(false)} matrix={matrix} ahval={ahval} silinmis={silinmis} day={day}/>
+      <MetinYapistirModal open={pasteOpen} onClose={()=>setPasteOpen(false)} onSubmit={setLinkContext} current={linkContext}/>
+      <SenaryoModal open={!!activeScenario} senaryo={activeScenario} onClose={()=>setActiveScenario(null)} onTamamla={handleScenarioComplete} ctx={ctx}/>
+      <DivanModal open={divanOpen} agents={divanAgents} onClose={()=>setDivanOpen(false)} ctx={ctx}/>
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 </body>
 </html>
